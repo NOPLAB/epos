@@ -1,1 +1,20 @@
-build/compile_commands.json
+[
+{
+  "directory": "/home/nop/dev/epos/build",
+  "command": "/usr/bin/c++  -I/home/nop/dev/epos/include -std=gnu++14 -fPIE -o CMakeFiles/EPOS4.dir/src/main.cpp.o -c /home/nop/dev/epos/src/main.cpp",
+  "file": "/home/nop/dev/epos/src/main.cpp",
+  "output": "CMakeFiles/EPOS4.dir/src/main.cpp.o"
+},
+{
+  "directory": "/home/nop/dev/epos/build",
+  "command": "/usr/bin/c++  -I/home/nop/dev/epos/include -std=gnu++14 -fPIE -o CMakeFiles/EPOS4.dir/src/EPOSController.cpp.o -c /home/nop/dev/epos/src/EPOSController.cpp",
+  "file": "/home/nop/dev/epos/src/EPOSController.cpp",
+  "output": "CMakeFiles/EPOS4.dir/src/EPOSController.cpp.o"
+},
+{
+  "directory": "/home/nop/dev/epos/build",
+  "command": "/usr/bin/c++  -I/home/nop/dev/epos/include -std=gnu++14 -fPIE -o CMakeFiles/EPOS4.dir/src/DifferentialDrive.cpp.o -c /home/nop/dev/epos/src/DifferentialDrive.cpp",
+  "file": "/home/nop/dev/epos/src/DifferentialDrive.cpp",
+  "output": "CMakeFiles/EPOS4.dir/src/DifferentialDrive.cpp.o"
+}
+]
