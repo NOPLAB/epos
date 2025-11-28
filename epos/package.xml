@@ -3,16 +3,22 @@
 <package format="3">
   <name>epos</name>
   <version>0.0.1</version>
-  <description>C++ wrapper library for Maxon EPOS4 motor controllers</description>
+  <description>C++ wrapper library and ros2_control hardware interface for Maxon EPOS4 motor controllers</description>
   <maintainer email="noplab90@gmail.com">nop</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>hardware_interface</depend>
+  <depend>pluginlib</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
+    <hardware_interface plugin="${prefix}/epos_hardware.xml"/>
   </export>
 </package>

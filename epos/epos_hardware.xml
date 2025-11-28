@@ -1,0 +1,9 @@
+<library path="epos">
+  <class name="epos/EPOSHardwareInterface"
+         type="epos::EPOSHardwareInterface"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      Hardware interface for Maxon EPOS4 motor controllers
+    </description>
+  </class>
+</library>
