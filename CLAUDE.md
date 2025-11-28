@@ -8,10 +8,31 @@ ROS 2 package providing a `ros2_control` hardware interface and C++ wrapper libr
 
 **Communication:** CANopen protocol over USB to EPOS4 hardware devices.
 
-## Build Commands
+## Build & Run Commands
+
+### Docker Development (Recommended)
 
 ```bash
-# Build (from workspace root containing this repo)
+# Build images
+docker compose build
+
+# Development shell (with source mounts for live editing)
+docker compose run shooter
+
+# Run with keyboard control
+docker compose --profile keyboard up
+
+# Run with face tracking
+docker compose --profile face up
+
+# Run Gazebo simulation
+docker compose --profile sim up
+```
+
+### Native Build (from ROS 2 workspace root)
+
+```bash
+# Build packages
 colcon build --packages-select epos shooter
 
 # Build with compile_commands.json for IDE support
@@ -19,26 +40,15 @@ colcon build --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
 # Run the shooter robot
 ros2 launch shooter shooter.launch.py
+
+# Run face tracker (separate terminal)
+ros2 launch shooter face_tracker.launch.py
+
+# Keyboard teleop (separate terminal)
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
 
 ## Architecture
-
-### Package Structure
-```
-epos/                  # Main ROS 2 package
-├── epos/              # Hardware interface library
-│   ├── include/epos/
-│   │   ├── EPOSController.h        # Low-level motor control wrapper
-│   │   ├── EPOSHardwareInterface.h # ros2_control SystemInterface
-│   │   └── Definitions.h           # Vendor C API bindings
-│   └── src/
-│       ├── EPOSController.cpp
-│       └── EPOSHardwareInterface.cpp
-└── shooter/           # Example differential drive robot
-    ├── config/controllers.yaml     # ros2_control configuration
-    ├── launch/shooter.launch.py
-    └── urdf/shooter.urdf.xacro
-```
 
 ### Layered Design
 ```
@@ -67,9 +77,12 @@ USB → EPOS4 Hardware
 - Constructor defaults: EPOS4 device, USB0 port, 1 Mbps baudrate, Node ID 1
 - All public methods return `bool`; errors via `getLastErrorCode()`
 
-**Definitions.h**
-- Vendor-supplied C API header declaring all libEposCmd functions
-- ~100+ functions for CANopen/USB communication, motion control, configuration
+**FaceTrackerNode** (`shooter/src/face_tracker_node.cpp`)
+- OpenCV-based face detection with Haar cascades
+- PI controller for tracking (publishes to `/diff_drive_controller/cmd_vel_unstamped`)
+- Can use direct camera device or ROS image topic
+
+**Definitions.h** - Vendor-supplied C API header (~100+ functions for CANopen/USB communication)
 
 ## URDF Configuration
 
@@ -93,10 +106,11 @@ The hardware interface is configured in URDF with the `<ros2_control>` tag:
 </ros2_control>
 ```
 
-## Critical Dependencies
+## Dependencies
 
-- **ROS 2** with `ros2_control`, `hardware_interface`, `pluginlib`, `rclcpp_lifecycle`
-- **libEposCmd** - Maxon vendor library (linked via `-lEposCmd`)
+- **ROS 2 Humble** with `ros2_control`, `hardware_interface`, `pluginlib`, `rclcpp_lifecycle`
+- **libEposCmd** - Maxon vendor library (linked via `-lEposCmd`, included in `EPOS_Linux_Library/`)
+- **OpenCV** - Face detection for face_tracker_node
 - **Supported architectures:** x86, x86_64, ARM (soft-float, hard-float, aarch64)
 
 ## EPOSController API Reference
@@ -115,13 +129,11 @@ The hardware interface is configured in URDF with the `<ros2_control>` tag:
 - `getVelocity()` - Returns RPM
 - `isTargetReached()`
 
-**Units:**
-- Position: quadcounts
-- Velocity: RPM
-- Acceleration: RPM/s
+**Units:** Position in quadcounts, velocity in RPM, acceleration in RPM/s
 
-## Development Environment
+## Development Notes
 
-- **Standard**: C++14
+- **C++ Standard**: C++14
 - **Build System**: ament_cmake (ROS 2)
 - **Plugin registration**: `epos_hardware.xml` exports `epos/EPOSHardwareInterface`
+- **Vendor example**: `EPOS_Linux_Library/examples/HelloEposCmd/` demonstrates raw libEposCmd usage
