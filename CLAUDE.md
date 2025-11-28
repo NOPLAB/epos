@@ -19,14 +19,17 @@ docker compose build
 # Development shell (with source mounts for live editing)
 docker compose run shooter
 
-# Run with keyboard control
-docker compose --profile keyboard up
+# Real hardware + keyboard control
+docker compose --profile real --profile keyboard up
 
-# Run with face tracking
-docker compose --profile face up
+# Real hardware + body tracking
+docker compose --profile real --profile body up
 
-# Run Gazebo simulation
-docker compose --profile sim up
+# Gazebo simulation + keyboard control
+docker compose --profile sim --profile keyboard up
+
+# Gazebo simulation + body tracking
+docker compose --profile sim --profile body up
 ```
 
 ### Native Build (from ROS 2 workspace root)
@@ -41,8 +44,8 @@ colcon build --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 # Run the shooter robot
 ros2 launch shooter shooter.launch.py
 
-# Run face tracker (separate terminal)
-ros2 launch shooter face_tracker.launch.py
+# Run body tracker (separate terminal)
+ros2 launch shooter body_tracker.launch.py
 
 # Keyboard teleop (separate terminal)
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
@@ -77,8 +80,8 @@ USB → EPOS4 Hardware
 - Constructor defaults: EPOS4 device, USB0 port, 1 Mbps baudrate, Node ID 1
 - All public methods return `bool`; errors via `getLastErrorCode()`
 
-**FaceTrackerNode** (`shooter/src/face_tracker_node.cpp`)
-- OpenCV-based face detection with Haar cascades
+**BodyTrackerNode** (`shooter/src/body_tracker_node.cpp`)
+- OpenCV-based body detection with HOG descriptor
 - PI controller for tracking (publishes to `/diff_drive_controller/cmd_vel_unstamped`)
 - Can use direct camera device or ROS image topic
 
@@ -110,7 +113,7 @@ The hardware interface is configured in URDF with the `<ros2_control>` tag:
 
 - **ROS 2 Humble** with `ros2_control`, `hardware_interface`, `pluginlib`, `rclcpp_lifecycle`
 - **libEposCmd** - Maxon vendor library (linked via `-lEposCmd`, included in `EPOS_Linux_Library/`)
-- **OpenCV** - Face detection for face_tracker_node
+- **OpenCV** - Body detection for body_tracker_node
 - **Supported architectures:** x86, x86_64, ARM (soft-float, hard-float, aarch64)
 
 ## EPOSController API Reference

@@ -16,6 +16,7 @@
   <depend>robot_state_publisher</depend>
   <depend>xacro</depend>
   <depend>rclcpp</depend>
+  <depend>ament_index_cpp</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
   <depend>cv_bridge</depend>

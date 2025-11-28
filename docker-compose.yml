@@ -22,26 +22,23 @@ services:
     volumes:
       - /dev:/dev
     profiles:
-      - face
-      - keyboard
+      - real
     command: ros2 launch shooter shooter.launch.py
 
   keyboard:
     image: shooter-ros-humble
     container_name: shooter-keyboard
-    depends_on:
-      - shooter-run
     stdin_open: true
     tty: true
     profiles:
       - keyboard
-    command: ros2 run teleop_twist_keyboard teleop_twist_keyboard
+    command: >
+      ros2 run teleop_twist_keyboard teleop_twist_keyboard
+      --ros-args -r /cmd_vel:=/diff_drive_controller/cmd_vel_unstamped
 
-  face_tracker:
+  body_tracker:
     image: shooter-ros-humble
-    container_name: shooter-face-tracker
-    depends_on:
-      - shooter-run
+    container_name: shooter-body-tracker
     privileged: true
     volumes:
       - /dev/video0:/dev/video0
@@ -51,8 +48,8 @@ services:
     stdin_open: true
     tty: true
     profiles:
-      - face
-    command: ros2 launch shooter face_tracker.launch.py
+      - body
+    command: ros2 launch shooter body_tracker.launch.py
 
   # ============================================
   # Simulation Services (Gazebo Sim)
@@ -88,22 +85,7 @@ services:
       - QT_X11_NO_MITSHM=1
     profiles:
       - sim
-      - sim-keyboard
     command: ros2 launch shooter sim.launch.py
-
-  sim-keyboard:
-    build:
-      context: .
-      dockerfile: Dockerfile.sim
-    image: shooter-sim
-    container_name: shooter-sim-keyboard
-    stdin_open: true
-    tty: true
-    profiles:
-      - sim
-    command: >
-      ros2 run teleop_twist_keyboard teleop_twist_keyboard
-      --ros-args -r /cmd_vel:=/diff_drive_controller/cmd_vel_unstamped
 
 networks:
   default:

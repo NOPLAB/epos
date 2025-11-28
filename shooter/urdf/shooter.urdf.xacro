@@ -9,6 +9,7 @@
   <xacro:property name="wheel_radius" value="0.05"/>
   <xacro:property name="wheel_width" value="0.04"/>
   <xacro:property name="wheel_separation" value="0.3"/>
+  <xacro:property name="wheelbase" value="0.25"/>
   <xacro:property name="base_length" value="0.4"/>
   <xacro:property name="base_width" value="0.3"/>
   <xacro:property name="base_height" value="0.1"/>
@@ -57,81 +58,61 @@
     <origin xyz="0 0 ${base_height/2}" rpy="0 0 0"/>
   </joint>
 
-  <!-- Left Wheel -->
-  <link name="left_wheel">
-    <visual>
-      <geometry>
-        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <geometry>
-        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0.5"/>
-      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
-    </inertial>
-  </link>
+  <!-- Wheel Macro -->
+  <xacro:macro name="wheel" params="name">
+    <link name="${name}">
+      <visual>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <material name="black"/>
+      </visual>
+      <collision>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="0.5"/>
+        <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
+      </inertial>
+    </link>
+  </xacro:macro>
 
-  <joint name="left_wheel_joint" type="continuous">
+  <!-- Front Left Wheel -->
+  <xacro:wheel name="front_left_wheel"/>
+  <joint name="front_left_wheel_joint" type="continuous">
     <parent link="base_link"/>
-    <child link="left_wheel"/>
-    <origin xyz="0 ${wheel_separation/2} 0" rpy="${-pi/2} 0 0"/>
+    <child link="front_left_wheel"/>
+    <origin xyz="${wheelbase/2} ${wheel_separation/2} 0" rpy="${-pi/2} 0 0"/>
     <axis xyz="0 0 1"/>
   </joint>
 
-  <!-- Right Wheel -->
-  <link name="right_wheel">
-    <visual>
-      <geometry>
-        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <geometry>
-        <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0.5"/>
-      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001"/>
-    </inertial>
-  </link>
-
-  <joint name="right_wheel_joint" type="continuous">
+  <!-- Rear Left Wheel -->
+  <xacro:wheel name="rear_left_wheel"/>
+  <joint name="rear_left_wheel_joint" type="continuous">
     <parent link="base_link"/>
-    <child link="right_wheel"/>
-    <origin xyz="0 ${-wheel_separation/2} 0" rpy="${-pi/2} 0 0"/>
+    <child link="rear_left_wheel"/>
+    <origin xyz="${-wheelbase/2} ${wheel_separation/2} 0" rpy="${-pi/2} 0 0"/>
     <axis xyz="0 0 1"/>
   </joint>
 
-  <!-- Caster Wheel (for stability) -->
-  <link name="caster_wheel">
-    <visual>
-      <geometry>
-        <sphere radius="${wheel_radius/2}"/>
-      </geometry>
-      <material name="black"/>
-    </visual>
-    <collision>
-      <geometry>
-        <sphere radius="${wheel_radius/2}"/>
-      </geometry>
-    </collision>
-    <inertial>
-      <mass value="0.1"/>
-      <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/>
-    </inertial>
-  </link>
-
-  <joint name="caster_wheel_joint" type="fixed">
+  <!-- Front Right Wheel -->
+  <xacro:wheel name="front_right_wheel"/>
+  <joint name="front_right_wheel_joint" type="continuous">
     <parent link="base_link"/>
-    <child link="caster_wheel"/>
-    <origin xyz="${-base_length/2 + wheel_radius/2} 0 ${-wheel_radius/2}" rpy="0 0 0"/>
+    <child link="front_right_wheel"/>
+    <origin xyz="${wheelbase/2} ${-wheel_separation/2} 0" rpy="${-pi/2} 0 0"/>
+    <axis xyz="0 0 1"/>
+  </joint>
+
+  <!-- Rear Right Wheel -->
+  <xacro:wheel name="rear_right_wheel"/>
+  <joint name="rear_right_wheel_joint" type="continuous">
+    <parent link="base_link"/>
+    <child link="rear_right_wheel"/>
+    <origin xyz="${-wheelbase/2} ${-wheel_separation/2} 0" rpy="${-pi/2} 0 0"/>
+    <axis xyz="0 0 1"/>
   </joint>
 
   <!-- ros2_control - Real Hardware -->
@@ -146,13 +127,13 @@
         <param name="baudrate">1000000</param>
         <param name="counts_per_revolution">4096</param>
       </hardware>
-      <joint name="left_wheel_joint">
+      <joint name="front_left_wheel_joint">
         <param name="node_id">1</param>
         <command_interface name="velocity"/>
         <state_interface name="position"/>
         <state_interface name="velocity"/>
       </joint>
-      <joint name="right_wheel_joint">
+      <joint name="front_right_wheel_joint">
         <param name="node_id">2</param>
         <command_interface name="velocity"/>
         <state_interface name="position"/>
@@ -167,12 +148,22 @@
       <hardware>
         <plugin>gz_ros2_control/GazeboSimSystem</plugin>
       </hardware>
-      <joint name="left_wheel_joint">
+      <joint name="front_left_wheel_joint">
         <command_interface name="velocity"/>
         <state_interface name="position"/>
         <state_interface name="velocity"/>
       </joint>
-      <joint name="right_wheel_joint">
+      <joint name="rear_left_wheel_joint">
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="front_right_wheel_joint">
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="rear_right_wheel_joint">
         <command_interface name="velocity"/>
         <state_interface name="position"/>
         <state_interface name="velocity"/>
@@ -187,24 +178,32 @@
     </gazebo>
 
     <!-- Wheel friction -->
-    <gazebo reference="left_wheel">
+    <gazebo reference="front_left_wheel">
       <mu1>1.0</mu1>
       <mu2>1.0</mu2>
       <kp>1000000.0</kp>
       <kd>100.0</kd>
     </gazebo>
 
-    <gazebo reference="right_wheel">
+    <gazebo reference="rear_left_wheel">
       <mu1>1.0</mu1>
       <mu2>1.0</mu2>
       <kp>1000000.0</kp>
       <kd>100.0</kd>
     </gazebo>
 
-    <!-- Caster wheel - low friction for sliding -->
-    <gazebo reference="caster_wheel">
-      <mu1>0.001</mu1>
-      <mu2>0.001</mu2>
+    <gazebo reference="front_right_wheel">
+      <mu1>1.0</mu1>
+      <mu2>1.0</mu2>
+      <kp>1000000.0</kp>
+      <kd>100.0</kd>
+    </gazebo>
+
+    <gazebo reference="rear_right_wheel">
+      <mu1>1.0</mu1>
+      <mu2>1.0</mu2>
+      <kp>1000000.0</kp>
+      <kd>100.0</kd>
     </gazebo>
   </xacro:if>
 
