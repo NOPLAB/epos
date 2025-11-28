@@ -12,14 +12,44 @@ services:
     tty: true
     command: bash
 
+  shooter-run:
+    image: shooter-ros-humble
+    container_name: shooter-run
+    privileged: true
+    volumes:
+      - /dev:/dev
+    profiles:
+      - face
+      - keyboard
+    command: ros2 launch shooter shooter.launch.py
+
   keyboard:
     image: shooter-ros-humble
     container_name: shooter-keyboard
+    depends_on:
+      - shooter-run
     stdin_open: true
     tty: true
     profiles:
       - keyboard
     command: ros2 run teleop_twist_keyboard teleop_twist_keyboard
+
+  face_tracker:
+    image: shooter-ros-humble
+    container_name: shooter-face-tracker
+    depends_on:
+      - shooter-run
+    privileged: true
+    volumes:
+      - /dev/video0:/dev/video0
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    environment:
+      - DISPLAY=${DISPLAY}
+    stdin_open: true
+    tty: true
+    profiles:
+      - face
+    command: ros2 launch shooter face_tracker.launch.py
 
 networks:
   default:

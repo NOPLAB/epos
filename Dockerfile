@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     ros-humble-ros2-controllers \
     ros-humble-xacro \
     ros-humble-teleop-twist-keyboard \
+    ros-humble-cv-bridge \
+    libopencv-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create workspace directory

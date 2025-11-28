@@ -15,6 +15,11 @@
   <depend>joint_state_broadcaster</depend>
   <depend>robot_state_publisher</depend>
   <depend>xacro</depend>
+  <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>cv_bridge</depend>
+  <depend>OpenCV</depend>
 
   <exec_depend>ros2_control_node</exec_depend>
   <exec_depend>ros2launch</exec_depend>
