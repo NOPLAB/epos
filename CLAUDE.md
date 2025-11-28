@@ -4,128 +4,124 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a C++ wrapper library for controlling Maxon EPOS4 brushed/brushless DC motor controllers. The project provides an object-oriented interface (`EPOSController` class) that simplifies interaction with the vendor's C library (`libEposCmd`).
+ROS 2 package providing a `ros2_control` hardware interface and C++ wrapper library for Maxon EPOS4 motor controllers. The project enables integration of EPOS4 devices with the ROS 2 control framework.
 
 **Communication:** CANopen protocol over USB to EPOS4 hardware devices.
 
 ## Build Commands
 
 ```bash
-# Build project
-mkdir -p build && cd build
-cmake ..
-make
+# Build (from workspace root containing this repo)
+colcon build --packages-select epos shooter
 
-# Run demo application
-./EPOS4
+# Build with compile_commands.json for IDE support
+colcon build --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+# Run the shooter robot
+ros2 launch shooter shooter.launch.py
 ```
-
-The executable is generated at `build/EPOS4`.
 
 ## Architecture
 
+### Package Structure
+```
+epos/                  # Main ROS 2 package
+├── epos/              # Hardware interface library
+│   ├── include/epos/
+│   │   ├── EPOSController.h        # Low-level motor control wrapper
+│   │   ├── EPOSHardwareInterface.h # ros2_control SystemInterface
+│   │   └── Definitions.h           # Vendor C API bindings
+│   └── src/
+│       ├── EPOSController.cpp
+│       └── EPOSHardwareInterface.cpp
+└── shooter/           # Example differential drive robot
+    ├── config/controllers.yaml     # ros2_control configuration
+    ├── launch/shooter.launch.py
+    └── urdf/shooter.urdf.xacro
+```
+
 ### Layered Design
 ```
-User Application (main.cpp)
+ros2_control framework (diff_drive_controller)
     ↓
-EPOSController (C++ wrapper - src/EPOSController.cpp)
+EPOSHardwareInterface (ros2_control SystemInterface plugin)
     ↓
-Definitions.h (C bindings to vendor library)
+EPOSController (C++ wrapper)
     ↓
-libEposCmd (Maxon vendor shared library - must be installed)
+libEposCmd (Maxon vendor library)
     ↓
-USB Hardware → EPOS4 Motor Controller
+USB → EPOS4 Hardware
 ```
 
 ### Key Components
 
-**EPOSController Class** (`include/EPOSController.h`, `src/EPOSController.cpp`)
-- Main facade providing high-level motor control API
-- Handles device initialization, mode activation, motion commands, and state management
-- Constructor sets defaults: EPOS4 device, USB0 port, 1 Mbps baudrate, Node ID 1
-- All public methods return `bool` for success/failure
-- Errors logged via `logError()` to stderr; retrieve codes with `getLastErrorCode()`
+**EPOSHardwareInterface** (`epos/include/epos/EPOSHardwareInterface.h`)
+- Implements `hardware_interface::SystemInterface` for ros2_control
+- Manages multiple joints, each with its own EPOSController instance
+- Exports velocity command and position/velocity state interfaces
+- Configured via URDF `<ros2_control>` tags (see `shooter/urdf/shooter.urdf.xacro`)
 
-**Definitions.h** (`include/Definitions.h`)
-- Vendor-supplied C API header (534 lines)
-- Declares all low-level functions from libEposCmd
-- Organized by: Communication, Configuration, Operation Modes, State Machine, Motion Info, Low-Level CAN
-- 8+ operation modes: Profile Position, Profile Velocity, Homing, Interpolated Position, Position, Velocity, Current, Master Encoder, Step/Direction
+**EPOSController** (`epos/include/epos/EPOSController.h`)
+- Low-level facade for Maxon EPOS4 API
+- Handles device initialization, mode activation, motion commands
+- Constructor defaults: EPOS4 device, USB0 port, 1 Mbps baudrate, Node ID 1
+- All public methods return `bool`; errors via `getLastErrorCode()`
 
-### Common Usage Pattern
+**Definitions.h**
+- Vendor-supplied C API header declaring all libEposCmd functions
+- ~100+ functions for CANopen/USB communication, motion control, configuration
 
-```cpp
-EPOSController motor;
-if (!motor.initialize()) {
-    // handle error - check motor.getLastErrorCode()
-}
-motor.activatePositionMode();
-motor.setPositionProfile(velocity, accel, decel);
-motor.moveToPosition(targetPos, true, true);  // absolute, immediate
-// ... check isTargetReached(), getPosition(), etc.
-motor.close();
+## URDF Configuration
+
+The hardware interface is configured in URDF with the `<ros2_control>` tag:
+
+```xml
+<ros2_control name="epos_system" type="system">
+  <hardware>
+    <plugin>epos/EPOSHardwareInterface</plugin>
+    <param name="device_name">EPOS4</param>
+    <param name="port_name">USB0</param>
+    <param name="baudrate">1000000</param>
+    <param name="counts_per_revolution">4096</param>
+  </hardware>
+  <joint name="left_wheel_joint">
+    <param name="node_id">1</param>
+    <command_interface name="velocity"/>
+    <state_interface name="position"/>
+    <state_interface name="velocity"/>
+  </joint>
+</ros2_control>
 ```
 
 ## Critical Dependencies
 
-**libEposCmd** - Maxon vendor library
-- Must be installed system-wide (linked via `-lEposCmd` in CMakeLists.txt)
-- Provides ~100+ C functions wrapping CANopen and USB communication
-- Obtain from Maxon Motor AG software distribution for Linux
+- **ROS 2** with `ros2_control`, `hardware_interface`, `pluginlib`, `rclcpp_lifecycle`
+- **libEposCmd** - Maxon vendor library (linked via `-lEposCmd`)
+- **Supported architectures:** x86, x86_64, ARM (soft-float, hard-float, aarch64)
 
-**Supported architectures:** x86, x86_64, ARM (soft-float, hard-float, aarch64)
+## EPOSController API Reference
 
-## Operation Modes
+**Operation Modes:**
+- Position mode: `activatePositionMode()`, `moveToPosition()`, `setPositionProfile()`
+- Velocity mode: `activateVelocityMode()`, `moveWithVelocity()`, `setVelocityProfile()`
 
-The EPOS4 controller supports multiple operation modes (activate before use):
+**State Management:**
+- `initialize()` - Opens device, clears faults, enables motor
+- `clearFault()`, `enable()`, `disable()`
+- `getFaultState()`, `getEnableState()`
 
-- **Profile Position Mode**: Move to positions with velocity/acceleration profiles - `activatePositionMode()`, `moveToPosition()`
-- **Profile Velocity Mode**: Run at specified velocities - `activateVelocityMode()`, `moveWithVelocity()`
-- **Homing Mode**: Find reference/home position
-- **Interpolated Position Mode**: Follow trajectories
-- **Position/Velocity/Current Modes**: Direct continuous setpoints
-- **Master Encoder Mode**: Synchronized multi-axis following
-- **Step/Direction Mode**: Stepper motor compatibility
+**Motion Feedback:**
+- `getPosition()` - Returns quadcounts (4× encoder resolution)
+- `getVelocity()` - Returns RPM
+- `isTargetReached()`
 
-Each mode has corresponding activate, configure, and command functions in EPOSController.
-
-## State Management
-
-EPOS devices follow a state machine:
-1. **Fault State**: Clear with `clearFault()` before any operation
-2. **Disabled State**: Default after clearing faults
-3. **Enabled State**: Required for motion - call `enable()`
-4. **QuickStop State**: Emergency stop state
-
-The `initialize()` method handles fault clearing and enabling automatically. Check states with `getFaultState()` and `getEnableState()`.
-
-## Motion Control Details
-
-**Profile Configuration**: Set velocity/acceleration profiles BEFORE issuing motion commands
-- Position profile: `setPositionProfile(velocity, accel, decel)` - units: rpm, rpm/s
-- Velocity profile: `setVelocityProfile(accel, decel)` - units: rpm/s
-
-**Position units**: quadcounts (4× encoder counts for quadrature encoders)
-**Velocity units**: rpm (revolutions per minute)
-
-**Movement types**:
-- Absolute vs Relative: `moveToPosition(targetPos, absolute=true, ...)`
-- Immediate vs Buffered: `moveToPosition(..., immediately=true)` - immediate interrupts current movement
-
-**Monitoring**: Call `getPosition()`, `getVelocity()`, `isTargetReached()` for real-time feedback
-
-## Error Handling
-
-- All EPOSController methods return `bool` (true=success, false=failure)
-- On failure, retrieve error code: `unsigned int err = motor.getLastErrorCode()`
-- Convert to string: `std::string errMsg = motor.getErrorString(err)`
-- Vendor library errors retrieved via `VCS_GetErrorInfo()` from Definitions.h
-- Comprehensive logging to stderr includes function name and error details
+**Units:**
+- Position: quadcounts
+- Velocity: RPM
+- Acceleration: RPM/s
 
 ## Development Environment
 
 - **Standard**: C++14
-- **Build System**: CMake 3.5+
-- **Compiler**: GCC/G++
-- **IDE Support**: VSCode with C/C++ extension (configured via `.vscode/c_cpp_properties.json`)
-- **compile_commands.json**: Auto-generated in build/ for clangd/IntelliSense
+- **Build System**: ament_cmake (ROS 2)
+- **Plugin registration**: `epos_hardware.xml` exports `epos/EPOSHardwareInterface`
