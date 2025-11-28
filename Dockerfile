@@ -2,6 +2,9 @@
 # ROS Humble base image (Ubuntu 22.04)
 FROM ros:humble-ros-base
 
+# Target architecture for multi-platform builds
+ARG TARGETARCH
+
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -27,13 +30,21 @@ WORKDIR /opt
 # Copy EPOS Linux Library for installation
 COPY EPOS_Linux_Library /opt/EPOS_Linux_Library
 
-# Install libEposCmd library (x86_64)
+# Install libEposCmd library (multi-architecture)
+# TARGETARCH: amd64 -> intel/x86_64, arm64 -> arm/v8, arm -> arm/v7
 RUN mkdir -p /opt/EposCmdLib_6.8.1.0/lib && \
     cp -rf /opt/EPOS_Linux_Library/include /opt/EposCmdLib_6.8.1.0/ && \
-    cp -rf /opt/EPOS_Linux_Library/lib/intel/x86_64 /opt/EposCmdLib_6.8.1.0/lib/ && \
     cp -rf /opt/EPOS_Linux_Library/misc /opt/EposCmdLib_6.8.1.0/ && \
-    ln -sf /opt/EposCmdLib_6.8.1.0/lib/x86_64/libEposCmd.so.6.8.1.0 /usr/lib/libEposCmd.so && \
-    ln -sf /opt/EposCmdLib_6.8.1.0/lib/x86_64/libftd2xx.so.1.4.8 /usr/lib/libftd2xx.so && \
+    case "${TARGETARCH}" in \
+        amd64) LIB_PATH="intel/x86_64" ;; \
+        arm64) LIB_PATH="arm/v8" ;; \
+        arm)   LIB_PATH="arm/v7" ;; \
+        *)     echo "Unsupported architecture: ${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    ARCH_DIR=$(basename "${LIB_PATH}") && \
+    cp -rf /opt/EPOS_Linux_Library/lib/${LIB_PATH} /opt/EposCmdLib_6.8.1.0/lib/ && \
+    ln -sf /opt/EposCmdLib_6.8.1.0/lib/${ARCH_DIR}/libEposCmd.so.6.8.1.0 /usr/lib/libEposCmd.so && \
+    ln -sf /opt/EposCmdLib_6.8.1.0/lib/${ARCH_DIR}/libftd2xx.so.1.4.8 /usr/lib/libftd2xx.so && \
     ldconfig && \
     rm -rf /opt/EPOS_Linux_Library
 
