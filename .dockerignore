@@ -1,0 +1,6 @@
+.git/
+.cache/
+.vscode/
+build/
+install/
+log/

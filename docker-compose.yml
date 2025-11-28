@@ -1,0 +1,26 @@
+services:
+  shooter:
+    build: .
+    image: shooter-ros-humble
+    container_name: shooter
+    privileged: true
+    volumes:
+      - /dev:/dev
+      - ./epos:/ros2_ws/src/epos
+      - ./shooter:/ros2_ws/src/shooter
+    stdin_open: true
+    tty: true
+    command: bash
+
+  keyboard:
+    image: shooter-ros-humble
+    container_name: shooter-keyboard
+    stdin_open: true
+    tty: true
+    profiles:
+      - keyboard
+    command: ros2 run teleop_twist_keyboard teleop_twist_keyboard
+
+networks:
+  default:
+    name: shooter
