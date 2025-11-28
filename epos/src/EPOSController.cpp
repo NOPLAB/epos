@@ -1,5 +1,5 @@
-#include "EPOSController.h"
-#include "Definitions.h"
+#include "epos/EPOSController.h"
+#include "epos/Definitions.h"
 #include <cstring>
 #include <sstream>
 #include <iomanip>

@@ -1,7 +1,7 @@
 #ifndef DIFFERENTIAL_DRIVE_H
 #define DIFFERENTIAL_DRIVE_H
 
-#include "EPOSController.h"
+#include "epos/EPOSController.h"
 #include <memory>
 
 /**
