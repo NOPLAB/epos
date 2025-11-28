@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # ROS Humble base image (Ubuntu 22.04)
 FROM ros:humble-ros-base
 
@@ -5,7 +6,9 @@ FROM ros:humble-ros-base
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install build dependencies and ros2_control packages
-RUN apt-get update && apt-get install -y \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y \
     build-essential \
     cmake \
     git \
@@ -16,8 +19,7 @@ RUN apt-get update && apt-get install -y \
     ros-humble-xacro \
     ros-humble-teleop-twist-keyboard \
     ros-humble-cv-bridge \
-    libopencv-dev \
-    && rm -rf /var/lib/apt/lists/*
+    libopencv-dev
 
 # Create workspace directory
 WORKDIR /opt

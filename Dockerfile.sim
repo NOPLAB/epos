@@ -1,0 +1,53 @@
+# syntax=docker/dockerfile:1
+# ROS Humble + Gazebo Harmonic simulation image
+FROM ros:humble-ros-base
+
+# Avoid interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Gazebo Harmonic
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y \
+    wget \
+    lsb-release \
+    gnupg \
+    && wget https://packages.osrfoundation.org/gazebo.gpg -O /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/gazebo-stable.list > /dev/null \
+    && apt-get update && apt-get install -y \
+    gz-harmonic
+
+# Install ROS 2 packages
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y \
+    ros-humble-ros2-control \
+    ros-humble-ros2-controllers \
+    ros-humble-xacro \
+    ros-humble-robot-state-publisher \
+    ros-humble-joint-state-publisher \
+    ros-humble-ros-gz \
+    ros-humble-gz-ros2-control \
+    ros-humble-teleop-twist-keyboard
+
+# Create ROS workspace
+WORKDIR /ros2_ws/src
+
+# Copy only the shooter package (no real hardware needed for sim)
+COPY shooter /ros2_ws/src/shooter
+
+# Build the workspace
+WORKDIR /ros2_ws
+RUN . /opt/ros/humble/setup.sh && \
+    colcon build --symlink-install --packages-select shooter
+
+# Setup entrypoint
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+# Set environment for Gazebo
+ENV GZ_SIM_RESOURCE_PATH=/ros2_ws/src/shooter/worlds
+ENV GZ_VERSION=harmonic
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["bash"]

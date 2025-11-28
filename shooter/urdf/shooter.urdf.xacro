@@ -3,6 +3,7 @@
 
   <!-- Parameters -->
   <xacro:arg name="use_sim" default="false"/>
+  <xacro:property name="use_sim" value="$(arg use_sim)"/>
 
   <!-- Properties -->
   <xacro:property name="wheel_radius" value="0.05"/>
@@ -133,29 +134,78 @@
     <origin xyz="${-base_length/2 + wheel_radius/2} 0 ${-wheel_radius/2}" rpy="0 0 0"/>
   </joint>
 
-  <!-- ros2_control -->
-  <ros2_control name="epos_system" type="system">
-    <hardware>
-      <plugin>epos/EPOSHardwareInterface</plugin>
-      <param name="device_name">EPOS4</param>
-      <param name="protocol_stack_name">MAXON SERIAL V2</param>
-      <param name="interface_name">USB</param>
-      <param name="port_name">USB0</param>
-      <param name="baudrate">1000000</param>
-      <param name="counts_per_revolution">4096</param>
-    </hardware>
-    <joint name="left_wheel_joint">
-      <param name="node_id">1</param>
-      <command_interface name="velocity"/>
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
-    </joint>
-    <joint name="right_wheel_joint">
-      <param name="node_id">2</param>
-      <command_interface name="velocity"/>
-      <state_interface name="position"/>
-      <state_interface name="velocity"/>
-    </joint>
-  </ros2_control>
+  <!-- ros2_control - Real Hardware -->
+  <xacro:unless value="${use_sim}">
+    <ros2_control name="epos_system" type="system">
+      <hardware>
+        <plugin>epos/EPOSHardwareInterface</plugin>
+        <param name="device_name">EPOS4</param>
+        <param name="protocol_stack_name">MAXON SERIAL V2</param>
+        <param name="interface_name">USB</param>
+        <param name="port_name">USB0</param>
+        <param name="baudrate">1000000</param>
+        <param name="counts_per_revolution">4096</param>
+      </hardware>
+      <joint name="left_wheel_joint">
+        <param name="node_id">1</param>
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="right_wheel_joint">
+        <param name="node_id">2</param>
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+    </ros2_control>
+  </xacro:unless>
+
+  <!-- ros2_control - Gazebo Simulation -->
+  <xacro:if value="${use_sim}">
+    <ros2_control name="GazeboSystem" type="system">
+      <hardware>
+        <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+      </hardware>
+      <joint name="left_wheel_joint">
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="right_wheel_joint">
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+    </ros2_control>
+
+    <!-- Gazebo plugins -->
+    <gazebo>
+      <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+        <parameters>$(find shooter)/config/controllers.yaml</parameters>
+      </plugin>
+    </gazebo>
+
+    <!-- Wheel friction -->
+    <gazebo reference="left_wheel">
+      <mu1>1.0</mu1>
+      <mu2>1.0</mu2>
+      <kp>1000000.0</kp>
+      <kd>100.0</kd>
+    </gazebo>
+
+    <gazebo reference="right_wheel">
+      <mu1>1.0</mu1>
+      <mu2>1.0</mu2>
+      <kp>1000000.0</kp>
+      <kd>100.0</kd>
+    </gazebo>
+
+    <!-- Caster wheel - low friction for sliding -->
+    <gazebo reference="caster_wheel">
+      <mu1>0.001</mu1>
+      <mu2>0.001</mu2>
+    </gazebo>
+  </xacro:if>
 
 </robot>

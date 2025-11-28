@@ -1,4 +1,7 @@
 services:
+  # ============================================
+  # Real Hardware Services
+  # ============================================
   shooter:
     build: .
     image: shooter-ros-humble
@@ -50,6 +53,57 @@ services:
     profiles:
       - face
     command: ros2 launch shooter face_tracker.launch.py
+
+  # ============================================
+  # Simulation Services (Gazebo Sim)
+  # ============================================
+  sim:
+    build:
+      context: .
+      dockerfile: Dockerfile.sim
+    image: shooter-sim
+    container_name: shooter-sim
+    volumes:
+      - ./shooter:/ros2_ws/src/shooter
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    stdin_open: true
+    tty: true
+    profiles:
+      - sim
+    command: bash
+
+  sim-run:
+    build:
+      context: .
+      dockerfile: Dockerfile.sim
+    image: shooter-sim
+    container_name: shooter-sim-run
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    environment:
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    profiles:
+      - sim
+      - sim-keyboard
+    command: ros2 launch shooter sim.launch.py
+
+  sim-keyboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.sim
+    image: shooter-sim
+    container_name: shooter-sim-keyboard
+    stdin_open: true
+    tty: true
+    profiles:
+      - sim
+    command: >
+      ros2 run teleop_twist_keyboard teleop_twist_keyboard
+      --ros-args -r /cmd_vel:=/diff_drive_controller/cmd_vel_unstamped
 
 networks:
   default:
