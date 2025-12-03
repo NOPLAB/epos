@@ -16,9 +16,12 @@ def generate_launch_description():
     xacro_file = os.path.join(pkg_share, 'urdf', 'shooter.urdf.xacro')
     controllers_file = os.path.join(pkg_share, 'config', 'controllers.yaml')
 
+    # Get USB port from environment variable (default: USB0)
+    usb_port = os.environ.get('EPOS_USB_DEVICE', 'USB0')
+
     # Robot description
     robot_description = ParameterValue(
-        Command(['xacro ', xacro_file]),
+        Command(['xacro ', xacro_file, ' usb_port:=', usb_port]),
         value_type=str
     )
 

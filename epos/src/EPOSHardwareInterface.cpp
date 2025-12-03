@@ -183,6 +183,22 @@ std::vector<hardware_interface::CommandInterface> EPOSHardwareInterface::export_
   return command_interfaces;
 }
 
+hardware_interface::return_type EPOSHardwareInterface::prepare_command_mode_switch(
+  const std::vector<std::string> & /*start_interfaces*/,
+  const std::vector<std::string> & /*stop_interfaces*/)
+{
+  // Accept all command mode switches for velocity control
+  return hardware_interface::return_type::OK;
+}
+
+hardware_interface::return_type EPOSHardwareInterface::perform_command_mode_switch(
+  const std::vector<std::string> & /*start_interfaces*/,
+  const std::vector<std::string> & /*stop_interfaces*/)
+{
+  // Nothing special needed for velocity mode
+  return hardware_interface::return_type::OK;
+}
+
 hardware_interface::return_type EPOSHardwareInterface::read(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {

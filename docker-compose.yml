@@ -21,6 +21,8 @@ services:
     privileged: true
     volumes:
       - /dev:/dev
+    environment:
+      - EPOS_USB_DEVICE=${EPOS_USB_DEVICE:-USB0}
     profiles:
       - real
     command: ros2 launch shooter shooter.launch.py

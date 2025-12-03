@@ -1,95 +1,95 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+このファイルは、Claude Code (claude.ai/code) がこのリポジトリのコードを扱う際のガイダンスを提供します。
 
-## Project Overview
+## プロジェクト概要
 
-ROS 2 package providing a `ros2_control` hardware interface and C++ wrapper library for Maxon EPOS4 motor controllers. The project enables integration of EPOS4 devices with the ROS 2 control framework.
+Maxon EPOS4モーターコントローラ用の`ros2_control`ハードウェアインターフェースとC++ラッパーライブラリを提供するROS 2パッケージです。EPOS4デバイスをROS 2 controlフレームワークと統合することを目的としています。
 
-**Communication:** CANopen protocol over USB to EPOS4 hardware devices.
+**通信方式:** USB経由でEPOS4ハードウェアデバイスとCANopenプロトコルで通信
 
-## Build & Run Commands
+## ビルド・実行コマンド
 
-### Docker Development (Recommended)
+### Docker開発環境（推奨）
 
 ```bash
-# Build images
+# イメージのビルド
 docker compose build
 
-# Development shell (with source mounts for live editing)
+# 開発シェル（ソースマウントによるライブ編集対応）
 docker compose run shooter
 
-# Real hardware + keyboard control
+# 実機 + キーボード操作
 docker compose --profile real --profile keyboard up
 
-# Real hardware + body tracking
+# 実機 + ボディトラッキング
 docker compose --profile real --profile body up
 
-# Gazebo simulation + keyboard control
+# Gazeboシミュレーション + キーボード操作
 docker compose --profile sim --profile keyboard up
 
-# Gazebo simulation + body tracking
+# Gazeboシミュレーション + ボディトラッキング
 docker compose --profile sim --profile body up
 ```
 
-### Native Build (from ROS 2 workspace root)
+### ネイティブビルド（ROS 2ワークスペースルートから）
 
 ```bash
-# Build packages
+# パッケージのビルド
 colcon build --packages-select epos shooter
 
-# Build with compile_commands.json for IDE support
+# IDE対応のためcompile_commands.jsonを生成してビルド
 colcon build --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
-# Run the shooter robot
+# shooterロボットの起動
 ros2 launch shooter shooter.launch.py
 
-# Run body tracker (separate terminal)
+# ボディトラッカーの起動（別ターミナル）
 ros2 launch shooter body_tracker.launch.py
 
-# Keyboard teleop (separate terminal)
+# キーボードテレオペ（別ターミナル）
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
 
-## Architecture
+## アーキテクチャ
 
-### Layered Design
+### レイヤー構成
 ```
 ros2_control framework (diff_drive_controller)
     ↓
-EPOSHardwareInterface (ros2_control SystemInterface plugin)
+EPOSHardwareInterface (ros2_control SystemInterfaceプラグイン)
     ↓
-EPOSController (C++ wrapper)
+EPOSController (C++ラッパー)
     ↓
-libEposCmd (Maxon vendor library)
+libEposCmd (Maxonベンダーライブラリ)
     ↓
-USB → EPOS4 Hardware
+USB → EPOS4ハードウェア
 ```
 
-### Key Components
+### 主要コンポーネント
 
 **EPOSHardwareInterface** (`epos/include/epos/EPOSHardwareInterface.h`)
-- Implements `hardware_interface::SystemInterface` for ros2_control
-- Manages multiple joints, each with its own EPOSController instance
-- Exports velocity command and position/velocity state interfaces
-- Configured via URDF `<ros2_control>` tags (see `shooter/urdf/shooter.urdf.xacro`)
+- ros2_control用の`hardware_interface::SystemInterface`を実装
+- 複数のジョイントを管理し、各ジョイントが独自のEPOSControllerインスタンスを持つ
+- 速度コマンドと位置/速度状態インターフェースをエクスポート
+- URDFの`<ros2_control>`タグで設定（`shooter/urdf/shooter.urdf.xacro`参照）
 
 **EPOSController** (`epos/include/epos/EPOSController.h`)
-- Low-level facade for Maxon EPOS4 API
-- Handles device initialization, mode activation, motion commands
-- Constructor defaults: EPOS4 device, USB0 port, 1 Mbps baudrate, Node ID 1
-- All public methods return `bool`; errors via `getLastErrorCode()`
+- Maxon EPOS4 API用の低レベルファサード
+- デバイス初期化、モード有効化、モーションコマンドを処理
+- コンストラクタのデフォルト値: EPOS4デバイス、USB0ポート、1 Mbpsボーレート、ノードID 1
+- 全パブリックメソッドは`bool`を返し、エラーは`getLastErrorCode()`で取得
 
 **BodyTrackerNode** (`shooter/src/body_tracker_node.cpp`)
-- OpenCV-based body detection with HOG descriptor
-- PI controller for tracking (publishes to `/diff_drive_controller/cmd_vel_unstamped`)
-- Can use direct camera device or ROS image topic
+- HOG記述子を使用したOpenCVベースの人体検出
+- 追跡用PIコントローラ（`/diff_drive_controller/cmd_vel_unstamped`にパブリッシュ）
+- 直接カメラデバイスまたはROS画像トピックを使用可能
 
-**Definitions.h** - Vendor-supplied C API header (~100+ functions for CANopen/USB communication)
+**Definitions.h** - ベンダー提供のC APIヘッダ（CANopen/USB通信用の100以上の関数）
 
-## URDF Configuration
+## URDF設定
 
-The hardware interface is configured in URDF with the `<ros2_control>` tag:
+ハードウェアインターフェースはURDFの`<ros2_control>`タグで設定します：
 
 ```xml
 <ros2_control name="epos_system" type="system">
@@ -109,34 +109,34 @@ The hardware interface is configured in URDF with the `<ros2_control>` tag:
 </ros2_control>
 ```
 
-## Dependencies
+## 依存関係
 
-- **ROS 2 Humble** with `ros2_control`, `hardware_interface`, `pluginlib`, `rclcpp_lifecycle`
-- **libEposCmd** - Maxon vendor library (linked via `-lEposCmd`, included in `EPOS_Linux_Library/`)
-- **OpenCV** - Body detection for body_tracker_node
-- **Supported architectures:** x86, x86_64, ARM (soft-float, hard-float, aarch64)
+- **ROS 2 Humble** (`ros2_control`, `hardware_interface`, `pluginlib`, `rclcpp_lifecycle`を含む)
+- **libEposCmd** - Maxonベンダーライブラリ（`-lEposCmd`でリンク、`EPOS_Linux_Library/`に同梱）
+- **OpenCV** - body_tracker_node用の人体検出
+- **対応アーキテクチャ:** x86, x86_64, ARM (soft-float, hard-float, aarch64)
 
-## EPOSController API Reference
+## EPOSController APIリファレンス
 
-**Operation Modes:**
-- Position mode: `activatePositionMode()`, `moveToPosition()`, `setPositionProfile()`
-- Velocity mode: `activateVelocityMode()`, `moveWithVelocity()`, `setVelocityProfile()`
+**動作モード:**
+- 位置モード: `activatePositionMode()`, `moveToPosition()`, `setPositionProfile()`
+- 速度モード: `activateVelocityMode()`, `moveWithVelocity()`, `setVelocityProfile()`
 
-**State Management:**
-- `initialize()` - Opens device, clears faults, enables motor
+**状態管理:**
+- `initialize()` - デバイスを開き、フォルトをクリアし、モーターを有効化
 - `clearFault()`, `enable()`, `disable()`
 - `getFaultState()`, `getEnableState()`
 
-**Motion Feedback:**
-- `getPosition()` - Returns quadcounts (4× encoder resolution)
-- `getVelocity()` - Returns RPM
+**モーションフィードバック:**
+- `getPosition()` - クワッドカウントを返す（エンコーダ分解能の4倍）
+- `getVelocity()` - RPMを返す
 - `isTargetReached()`
 
-**Units:** Position in quadcounts, velocity in RPM, acceleration in RPM/s
+**単位:** 位置はクワッドカウント、速度はRPM、加速度はRPM/s
 
-## Development Notes
+## 開発メモ
 
-- **C++ Standard**: C++14
-- **Build System**: ament_cmake (ROS 2)
-- **Plugin registration**: `epos_hardware.xml` exports `epos/EPOSHardwareInterface`
-- **Vendor example**: `EPOS_Linux_Library/examples/HelloEposCmd/` demonstrates raw libEposCmd usage
+- **C++標準**: C++14
+- **ビルドシステム**: ament_cmake (ROS 2)
+- **プラグイン登録**: `epos_hardware.xml`で`epos/EPOSHardwareInterface`をエクスポート
+- **ベンダーサンプル**: `EPOS_Linux_Library/examples/HelloEposCmd/`で生のlibEposCmd使用例を確認可能
