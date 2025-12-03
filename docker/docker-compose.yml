@@ -63,7 +63,7 @@ services:
       -p pan_axis:=3
       -p tilt_axis:=4
       -p pan_scale:=0.01
-      -p tilt_scale:=0.02
+      -p tilt_scale:=0.03
       -p enable_tilt:=$${ENABLE_TILT:-false}"
 
   body_tracker:

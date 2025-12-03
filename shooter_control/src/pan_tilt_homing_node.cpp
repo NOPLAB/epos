@@ -177,7 +177,7 @@ private:
       return false;
     }
 
-    if (!controller->setPositionProfile(speed_switch_, homing_acceleration_, homing_acceleration_)) {
+    if (!controller->setPositionProfile(speed_switch_ * 3, homing_acceleration_, homing_acceleration_)) {
       RCLCPP_ERROR(get_logger(), "[%s] Failed to set position profile", axis_name.c_str());
       return false;
     }
