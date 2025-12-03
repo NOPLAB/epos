@@ -2,9 +2,10 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import RegisterEventHandler
+from launch.actions import DeclareLaunchArgument, RegisterEventHandler
+from launch.conditions import IfCondition, UnlessCondition
 from launch.event_handlers import OnProcessExit
-from launch.substitutions import Command
+from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -20,13 +21,21 @@ def generate_launch_description():
     # Get USB port from environment variable (default: USB0)
     usb_port = os.environ.get('EPOS_USB_DEVICE', 'USB0')
 
+    # Launch arguments
+    enable_homing_arg = DeclareLaunchArgument(
+        'enable_homing',
+        default_value='false',
+        description='Enable pan-tilt homing before starting controllers'
+    )
+    enable_homing = LaunchConfiguration('enable_homing')
+
     # Robot description
     robot_description = ParameterValue(
         Command(['xacro ', xacro_file, ' use_sim:=false usb_port:=', usb_port]),
         value_type=str
     )
 
-    # Nodes
+    # Robot State Publisher
     robot_state_publisher_node = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
@@ -34,7 +43,40 @@ def generate_launch_description():
         output='screen'
     )
 
+    # Pan-Tilt Homing Node (only when homing is enabled)
+    pan_tilt_homing_node = Node(
+        package='shooter_control',
+        executable='pan_tilt_homing_node',
+        name='pan_tilt_homing_node',
+        output='screen',
+        condition=IfCondition(enable_homing),
+        parameters=[{
+            'port_name': usb_port,
+            'pan_node_id': 3,
+            'tilt_node_id': 4,
+            'homing_acceleration': 5000,
+            'speed_switch': 3000,
+            'speed_index': 500,
+            'homing_timeout': 30000,
+            'auto_home': True,
+            'exit_after_homing': True,
+        }]
+    )
+
+    # Controller Manager (without homing)
     controller_manager_node = Node(
+        package='controller_manager',
+        executable='ros2_control_node',
+        parameters=[
+            {'robot_description': robot_description},
+            controllers_file
+        ],
+        output='screen',
+        condition=UnlessCondition(enable_homing)
+    )
+
+    # Controller Manager (with homing - starts after homing completes)
+    controller_manager_node_after_homing = Node(
         package='controller_manager',
         executable='ros2_control_node',
         parameters=[
@@ -44,10 +86,32 @@ def generate_launch_description():
         output='screen'
     )
 
+    # Start controller_manager after homing node exits
+    delay_controller_manager_after_homing = RegisterEventHandler(
+        event_handler=OnProcessExit(
+            target_action=pan_tilt_homing_node,
+            on_exit=[controller_manager_node_after_homing],
+        ),
+        condition=IfCondition(enable_homing)
+    )
+
+    # Spawners
     joint_state_broadcaster_spawner = Node(
         package='controller_manager',
         executable='spawner',
         arguments=['joint_state_broadcaster', '--controller-manager', '/controller_manager'],
+        output='screen',
+        condition=UnlessCondition(enable_homing)
+    )
+
+    joint_state_broadcaster_spawner_after_homing = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=[
+            'joint_state_broadcaster',
+            '--controller-manager', '/controller_manager',
+            '--controller-manager-timeout', '30'
+        ],
         output='screen'
     )
 
@@ -65,15 +129,35 @@ def generate_launch_description():
         output='screen'
     )
 
-    # Delay diff_drive_controller after joint_state_broadcaster
+    # Event handlers for homing mode
+    # Start joint_state_broadcaster spawner after homing completes
+    # The spawner will wait for controller_manager via --controller-manager-timeout
+    delay_joint_state_broadcaster_after_homing = RegisterEventHandler(
+        event_handler=OnProcessExit(
+            target_action=pan_tilt_homing_node,
+            on_exit=[joint_state_broadcaster_spawner_after_homing],
+        ),
+        condition=IfCondition(enable_homing)
+    )
+
+    delay_diff_drive_controller_after_homing = RegisterEventHandler(
+        event_handler=OnProcessExit(
+            target_action=joint_state_broadcaster_spawner_after_homing,
+            on_exit=[diff_drive_controller_spawner],
+        ),
+        condition=IfCondition(enable_homing)
+    )
+
+    # Event handlers for non-homing mode
     delay_diff_drive_controller = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=joint_state_broadcaster_spawner,
             on_exit=[diff_drive_controller_spawner],
-        )
+        ),
+        condition=UnlessCondition(enable_homing)
     )
 
-    # Delay pan_tilt_controller after diff_drive_controller
+    # Delay pan_tilt_controller after diff_drive_controller (common)
     delay_pan_tilt_controller = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=diff_drive_controller_spawner,
@@ -82,9 +166,17 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        enable_homing_arg,
         robot_state_publisher_node,
+        # Without homing
         controller_manager_node,
         joint_state_broadcaster_spawner,
         delay_diff_drive_controller,
+        # With homing
+        pan_tilt_homing_node,
+        delay_controller_manager_after_homing,
+        delay_joint_state_broadcaster_after_homing,
+        delay_diff_drive_controller_after_homing,
+        # Common
         delay_pan_tilt_controller,
     ])

@@ -20,8 +20,8 @@ public:
 
     // Homing parameters
     declare_parameter("homing_acceleration", 5000);  // RPM/s
-    declare_parameter("speed_switch", 500);          // RPM (speed to search for switch)
-    declare_parameter("speed_index", 100);           // RPM (speed to search for index)
+    declare_parameter("speed_switch", 3000);         // RPM (speed to search for switch)
+    declare_parameter("speed_index", 500);           // RPM (speed to search for index)
     declare_parameter("homing_timeout", 30000);      // ms
 
     // Get parameters
@@ -138,19 +138,20 @@ private:
   {
     RCLCPP_INFO(get_logger(), "[%s] Starting homing to center of limits...", axis_name.c_str());
 
-    // Set homing parameters
-    // Parameters: acceleration, speed_switch, speed_index, home_offset, current_threshold, home_position
+    // Set homing parameters with offset to center
+    // home_offset: offset from negative limit to center position
+    const int center_offset = 1650000;
     if (!controller->setHomingParameter(
           homing_acceleration_, speed_switch_, speed_index_,
-          0,     // home_offset
-          0,     // current_threshold (not used for limit switch homing)
-          0))    // home_position
+          center_offset,  // home_offset: negative limit will be at -40960, center at 0
+          0,              // current_threshold (not used for limit switch homing)
+          0))             // home_position
     {
       RCLCPP_ERROR(get_logger(), "[%s] Failed to set homing parameters", axis_name.c_str());
       return false;
     }
 
-    // Step 1: Home to negative limit switch
+    // Home to negative limit switch
     RCLCPP_INFO(get_logger(), "[%s] Moving to negative limit switch...", axis_name.c_str());
     if (!controller->activateHomingMode()) {
       RCLCPP_ERROR(get_logger(), "[%s] Failed to activate homing mode", axis_name.c_str());
@@ -168,41 +169,9 @@ private:
       return false;
     }
 
-    // Get position at negative limit
-    int negative_limit_pos = 0;
-    if (!controller->getPosition(negative_limit_pos)) {
-      RCLCPP_ERROR(get_logger(), "[%s] Failed to get position at negative limit", axis_name.c_str());
-      return false;
-    }
-    RCLCPP_INFO(get_logger(), "[%s] Negative limit position: %d", axis_name.c_str(), negative_limit_pos);
+    RCLCPP_INFO(get_logger(), "[%s] Homing attained. Moving to center (position 0)...", axis_name.c_str());
 
-    // Step 2: Home to positive limit switch
-    RCLCPP_INFO(get_logger(), "[%s] Moving to positive limit switch...", axis_name.c_str());
-    if (!controller->findHome(HM_POSITIVE_LIMIT_SWITCH)) {
-      RCLCPP_ERROR(get_logger(), "[%s] Failed to start homing to positive limit", axis_name.c_str());
-      return false;
-    }
-
-    if (!controller->waitForHomingAttained(homing_timeout_)) {
-      RCLCPP_ERROR(get_logger(), "[%s] Timeout waiting for positive limit switch", axis_name.c_str());
-      controller->stopHoming();
-      return false;
-    }
-
-    // Get position at positive limit
-    int positive_limit_pos = 0;
-    if (!controller->getPosition(positive_limit_pos)) {
-      RCLCPP_ERROR(get_logger(), "[%s] Failed to get position at positive limit", axis_name.c_str());
-      return false;
-    }
-    RCLCPP_INFO(get_logger(), "[%s] Positive limit position: %d", axis_name.c_str(), positive_limit_pos);
-
-    // Step 3: Calculate center position
-    int center_pos = (negative_limit_pos + positive_limit_pos) / 2;
-    RCLCPP_INFO(get_logger(), "[%s] Center position: %d", axis_name.c_str(), center_pos);
-
-    // Step 4: Move to center position
-    RCLCPP_INFO(get_logger(), "[%s] Moving to center position...", axis_name.c_str());
+    // Move to center position (0)
     if (!controller->activatePositionMode()) {
       RCLCPP_ERROR(get_logger(), "[%s] Failed to activate position mode", axis_name.c_str());
       return false;
@@ -213,7 +182,7 @@ private:
       return false;
     }
 
-    if (!controller->moveToPosition(center_pos, true, true)) {
+    if (!controller->moveToPosition(0, true, true)) {
       RCLCPP_ERROR(get_logger(), "[%s] Failed to move to center position", axis_name.c_str());
       return false;
     }
@@ -236,14 +205,7 @@ private:
       std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
 
-    // Step 5: Define current position as zero (origin)
-    RCLCPP_INFO(get_logger(), "[%s] Defining current position as origin...", axis_name.c_str());
-    if (!controller->definePosition(0)) {
-      RCLCPP_ERROR(get_logger(), "[%s] Failed to define position as origin", axis_name.c_str());
-      return false;
-    }
-
-    RCLCPP_INFO(get_logger(), "[%s] Homing completed. Origin set at center of limits.", axis_name.c_str());
+    RCLCPP_INFO(get_logger(), "[%s] Homing completed. Now at center position.", axis_name.c_str());
     return true;
   }
 

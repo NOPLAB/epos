@@ -55,6 +55,14 @@ hardware_interface::CallbackReturn EPOSHardwareInterface::on_init(
       return hardware_interface::CallbackReturn::ERROR;
     }
 
+    // Get per-joint counts_per_revolution (optional, falls back to hardware default)
+    if (info_.joints[i].parameters.count("counts_per_revolution")) {
+      joints_[i].counts_per_revolution = std::stod(
+        info_.joints[i].parameters.at("counts_per_revolution"));
+    } else {
+      joints_[i].counts_per_revolution = counts_per_revolution_;
+    }
+
     // Verify command interfaces (velocity and/or position)
     bool has_velocity_cmd = false;
     bool has_position_cmd = false;
@@ -93,7 +101,8 @@ hardware_interface::CallbackReturn EPOSHardwareInterface::on_init(
 
     RCLCPP_INFO(
       rclcpp::get_logger("EPOSHardwareInterface"),
-      "Joint '%s' configured with node_id=%d", joints_[i].name.c_str(), joints_[i].node_id);
+      "Joint '%s' configured with node_id=%d, counts_per_rev=%.0f",
+      joints_[i].name.c_str(), joints_[i].node_id, joints_[i].counts_per_revolution);
   }
 
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -199,12 +208,22 @@ std::vector<hardware_interface::CommandInterface> EPOSHardwareInterface::export_
 
 hardware_interface::return_type EPOSHardwareInterface::prepare_command_mode_switch(
   const std::vector<std::string> & start_interfaces,
-  const std::vector<std::string> & /*stop_interfaces*/)
+  const std::vector<std::string> & stop_interfaces)
 {
   // Determine target mode for each joint based on requested interfaces
   for (auto & joint : joints_) {
-    joint.target_mode = ControlMode::NONE;
+    // Keep current mode by default (don't reset to NONE)
+    joint.target_mode = joint.control_mode;
 
+    // Check if this joint should be stopped
+    for (const auto & interface : stop_interfaces) {
+      if (interface.find(joint.name + "/") != std::string::npos) {
+        joint.target_mode = ControlMode::NONE;
+        break;
+      }
+    }
+
+    // Check if this joint should start a new mode
     for (const auto & interface : start_interfaces) {
       // Interface format: "joint_name/interface_type"
       if (interface.find(joint.name + "/" + hardware_interface::HW_IF_POSITION) != std::string::npos) {
@@ -212,6 +231,7 @@ hardware_interface::return_type EPOSHardwareInterface::prepare_command_mode_swit
         break;
       } else if (interface.find(joint.name + "/" + hardware_interface::HW_IF_VELOCITY) != std::string::npos) {
         joint.target_mode = ControlMode::VELOCITY;
+        break;
       }
     }
   }
@@ -268,7 +288,7 @@ hardware_interface::return_type EPOSHardwareInterface::perform_command_mode_swit
       // Initialize position command to current position
       int current_pos = 0;
       joint.controller->getPosition(current_pos);
-      joint.position_command = (static_cast<double>(current_pos) / counts_per_revolution_) * 2.0 * M_PI;
+      joint.position_command = (static_cast<double>(current_pos) / joint.counts_per_revolution) * 2.0 * M_PI;
       RCLCPP_INFO(
         rclcpp::get_logger("EPOSHardwareInterface"),
         "Joint '%s' switched to position mode", joint.name.c_str());
@@ -288,8 +308,8 @@ hardware_interface::return_type EPOSHardwareInterface::read(
     int velocity_rpm = 0;
 
     if (joint.controller->getPosition(position_counts)) {
-      // Convert encoder counts to radians
-      joint.position = (static_cast<double>(position_counts) / counts_per_revolution_) * 2.0 * M_PI;
+      // Convert encoder counts to radians (using per-joint counts_per_revolution)
+      joint.position = (static_cast<double>(position_counts) / joint.counts_per_revolution) * 2.0 * M_PI;
     }
 
     if (joint.controller->getVelocity(velocity_rpm)) {
@@ -315,9 +335,9 @@ hardware_interface::return_type EPOSHardwareInterface::write(
           "Failed to set velocity for joint '%s'", joint.name.c_str());
       }
     } else if (joint.control_mode == ControlMode::POSITION) {
-      // Convert radians to encoder counts
+      // Convert radians to encoder counts (using per-joint counts_per_revolution)
       long position_counts = static_cast<long>(
-        (joint.position_command / (2.0 * M_PI)) * counts_per_revolution_);
+        (joint.position_command / (2.0 * M_PI)) * joint.counts_per_revolution);
 
       if (!joint.controller->moveToPosition(position_counts, true, true)) {
         RCLCPP_WARN(

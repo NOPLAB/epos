@@ -29,7 +29,7 @@ services:
       - EPOS_USB_DEVICE=${EPOS_USB_DEVICE:-USB0}
     profiles:
       - real
-    command: ros2 launch shooter_bringup shooter_with_homing.launch.py
+    command: ros2 launch shooter_bringup shooter.launch.py enable_homing:=true
 
   keyboard:
     image: shooter-ros-humble
@@ -48,11 +48,23 @@ services:
     privileged: true
     volumes:
       - /dev/input:/dev/input
+      - ./joystick.config.yaml:/config/joystick.config.yaml:ro
+    environment:
+      - JOY_DEV_ID=${JOY_DEV_ID:-0}
+      - ENABLE_TILT=${ENABLE_TILT:-false}
     profiles:
       - joystick
     command: >
-      ros2 launch teleop_twist_joy teleop-launch.py
+      bash -c "ros2 launch teleop_twist_joy teleop-launch.py
       joy_vel:=/diff_drive_controller/cmd_vel_unstamped
+      config_filepath:=/config/joystick.config.yaml
+      device_id:=$${JOY_DEV_ID:-0} &
+      ros2 run shooter_control pan_tilt_joy_node --ros-args
+      -p pan_axis:=3
+      -p tilt_axis:=4
+      -p pan_scale:=0.005
+      -p tilt_scale:=0.005
+      -p enable_tilt:=$${ENABLE_TILT:-false}"
 
   body_tracker:
     image: shooter-ros-humble

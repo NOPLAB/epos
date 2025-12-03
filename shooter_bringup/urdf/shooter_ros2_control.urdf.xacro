@@ -26,8 +26,10 @@
       <state_interface name="velocity"/>
     </joint>
     <!-- Position control joints (node_id 3, 4) -->
+    <!-- Pan joint: counts_per_revolution calculated from homing offset (1650000 counts ≈ 90°) -->
     <joint name="pan_joint">
       <param name="node_id">3</param>
+      <param name="counts_per_revolution">6600000</param>
       <command_interface name="position"/>
       <state_interface name="position"/>
       <state_interface name="velocity"/>
@@ -35,6 +37,7 @@
     <!-- tilt_joint temporarily disabled
     <joint name="tilt_joint">
       <param name="node_id">4</param>
+      <param name="counts_per_revolution">6600000</param>
       <command_interface name="position"/>
       <state_interface name="position"/>
       <state_interface name="velocity"/>

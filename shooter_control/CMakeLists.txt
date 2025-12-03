@@ -35,7 +35,14 @@ ament_target_dependencies(pan_tilt_homing_node
   epos
 )
 
-install(TARGETS body_tracker_node pan_tilt_homing_node
+add_executable(pan_tilt_joy_node src/pan_tilt_joy_node.cpp)
+ament_target_dependencies(pan_tilt_joy_node
+  rclcpp
+  sensor_msgs
+  std_msgs
+)
+
+install(TARGETS body_tracker_node pan_tilt_homing_node pan_tilt_joy_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

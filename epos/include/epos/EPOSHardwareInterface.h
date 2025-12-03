@@ -74,6 +74,7 @@ private:
     ControlMode control_mode{ControlMode::NONE};
     ControlMode target_mode{ControlMode::NONE};
     std::unique_ptr<EPOSController> controller;
+    double counts_per_revolution{4096.0};  // Per-joint counts per revolution
   };
 
   std::vector<JointState> joints_;
