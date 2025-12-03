@@ -1,0 +1,14 @@
+# Request
+string joint_name                  # Joint name to home (empty for all position joints)
+int8 homing_method 35              # Homing method (default: 35 = current threshold positive speed)
+uint32 homing_acceleration 10000   # Acceleration [rpm/s]
+uint32 speed_switch 100            # Speed for switch search [rpm]
+uint32 speed_index 50              # Speed for index search [rpm]
+int32 home_offset 0                # Home offset [quad counts]
+uint16 current_threshold 500       # Current threshold [mA]
+int32 home_position 0              # Home position [quad counts]
+int32 timeout_ms 30000             # Timeout [ms]
+---
+# Response
+bool success
+string message

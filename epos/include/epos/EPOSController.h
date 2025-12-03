@@ -34,6 +34,17 @@ public:
     bool haltVelocityMovement();
     bool setVelocityProfile(unsigned int acceleration, unsigned int deceleration);
 
+    // Homing Mode
+    bool activateHomingMode();
+    bool setHomingParameter(unsigned int homingAcceleration, unsigned int speedSwitch,
+                           unsigned int speedIndex, int homeOffset,
+                           unsigned short currentThreshold, int homePosition);
+    bool findHome(signed char homingMethod);
+    bool stopHoming();
+    bool definePosition(int homePosition);
+    bool waitForHomingAttained(int timeoutMs);
+    bool getHomingState(bool& homingAttained, bool& homingError);
+
     // State Management
     bool enable();
     bool disable();

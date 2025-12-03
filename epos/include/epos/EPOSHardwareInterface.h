@@ -56,6 +56,13 @@ public:
     const rclcpp::Time & time, const rclcpp::Duration & period) override;
 
 private:
+  enum class ControlMode
+  {
+    NONE,
+    VELOCITY,
+    POSITION
+  };
+
   struct JointState
   {
     std::string name;
@@ -63,6 +70,9 @@ private:
     double position{0.0};
     double velocity{0.0};
     double velocity_command{0.0};
+    double position_command{0.0};
+    ControlMode control_mode{ControlMode::NONE};
+    ControlMode target_mode{ControlMode::NONE};
     std::unique_ptr<EPOSController> controller;
   };
 

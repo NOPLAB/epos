@@ -117,6 +117,59 @@
     <axis xyz="0 0 1"/>
   </joint>
 
+  <!-- Pan-Tilt Mechanism -->
+  <link name="pan_link">
+    <visual>
+      <geometry>
+        <cylinder radius="0.03" length="0.05"/>
+      </geometry>
+      <material name="white"/>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder radius="0.03" length="0.05"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.2"/>
+      <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/>
+    </inertial>
+  </link>
+
+  <joint name="pan_joint" type="revolute">
+    <parent link="chassis"/>
+    <child link="pan_link"/>
+    <origin xyz="0 0 ${base_height/2 + 0.025}" rpy="0 0 0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${-pi}" upper="${pi}" effort="10" velocity="3.14"/>
+  </joint>
+
+  <link name="tilt_link">
+    <visual>
+      <geometry>
+        <box size="0.05 0.08 0.03"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.05 0.08 0.03"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <mass value="0.1"/>
+      <inertia ixx="0.0001" ixy="0" ixz="0" iyy="0.0001" iyz="0" izz="0.0001"/>
+    </inertial>
+  </link>
+
+  <joint name="tilt_joint" type="revolute">
+    <parent link="pan_link"/>
+    <child link="tilt_link"/>
+    <origin xyz="0 0 0.04" rpy="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="${-pi/2}" upper="${pi/2}" effort="10" velocity="3.14"/>
+  </joint>
+
   <!-- ros2_control - Real Hardware -->
   <xacro:unless value="${use_sim}">
     <ros2_control name="epos_system" type="system">
@@ -129,15 +182,29 @@
         <param name="baudrate">1000000</param>
         <param name="counts_per_revolution">4096</param>
       </hardware>
+      <!-- Velocity control joints (node_id 1, 2) -->
+      <joint name="front_right_wheel_joint">
+        <param name="node_id">1</param>
+        <command_interface name="velocity"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
       <joint name="front_left_wheel_joint">
         <param name="node_id">2</param>
         <command_interface name="velocity"/>
         <state_interface name="position"/>
         <state_interface name="velocity"/>
       </joint>
-      <joint name="front_right_wheel_joint">
-        <param name="node_id">1</param>
-        <command_interface name="velocity"/>
+      <!-- Position control joints (node_id 3, 4) -->
+      <joint name="pan_joint">
+        <param name="node_id">3</param>
+        <command_interface name="position"/>
+        <state_interface name="position"/>
+        <state_interface name="velocity"/>
+      </joint>
+      <joint name="tilt_joint">
+        <param name="node_id">4</param>
+        <command_interface name="position"/>
         <state_interface name="position"/>
         <state_interface name="velocity"/>
       </joint>

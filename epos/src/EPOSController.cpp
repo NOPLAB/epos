@@ -248,6 +248,106 @@ bool EPOSController::haltVelocityMovement() {
     return true;
 }
 
+bool EPOSController::activateHomingMode() {
+    unsigned int errorCode = 0;
+    std::stringstream msg;
+    msg << "Activating homing mode, node = " << nodeId_;
+    logInfo(msg.str());
+
+    if (VCS_ActivateHomingMode(keyHandle_, nodeId_, &errorCode) == 0) {
+        logError("VCS_ActivateHomingMode", MMC_FAILED, errorCode);
+        return false;
+    }
+
+    return true;
+}
+
+bool EPOSController::setHomingParameter(unsigned int homingAcceleration, unsigned int speedSwitch,
+                                        unsigned int speedIndex, int homeOffset,
+                                        unsigned short currentThreshold, int homePosition) {
+    unsigned int errorCode = 0;
+    std::stringstream msg;
+    msg << "Setting homing parameters, node = " << nodeId_;
+    logInfo(msg.str());
+
+    if (VCS_SetHomingParameter(keyHandle_, nodeId_, homingAcceleration, speedSwitch,
+                               speedIndex, homeOffset, currentThreshold, homePosition, &errorCode) == 0) {
+        logError("VCS_SetHomingParameter", MMC_FAILED, errorCode);
+        return false;
+    }
+
+    return true;
+}
+
+bool EPOSController::findHome(signed char homingMethod) {
+    unsigned int errorCode = 0;
+    std::stringstream msg;
+    msg << "Finding home with method = " << static_cast<int>(homingMethod) << ", node = " << nodeId_;
+    logInfo(msg.str());
+
+    if (VCS_FindHome(keyHandle_, nodeId_, homingMethod, &errorCode) == 0) {
+        logError("VCS_FindHome", MMC_FAILED, errorCode);
+        return false;
+    }
+
+    return true;
+}
+
+bool EPOSController::stopHoming() {
+    unsigned int errorCode = 0;
+    logInfo("Stopping homing");
+
+    if (VCS_StopHoming(keyHandle_, nodeId_, &errorCode) == 0) {
+        logError("VCS_StopHoming", MMC_FAILED, errorCode);
+        return false;
+    }
+
+    return true;
+}
+
+bool EPOSController::definePosition(int homePosition) {
+    unsigned int errorCode = 0;
+    std::stringstream msg;
+    msg << "Defining position = " << homePosition << ", node = " << nodeId_;
+    logInfo(msg.str());
+
+    if (VCS_DefinePosition(keyHandle_, nodeId_, homePosition, &errorCode) == 0) {
+        logError("VCS_DefinePosition", MMC_FAILED, errorCode);
+        return false;
+    }
+
+    return true;
+}
+
+bool EPOSController::waitForHomingAttained(int timeoutMs) {
+    unsigned int errorCode = 0;
+    std::stringstream msg;
+    msg << "Waiting for homing attained, timeout = " << timeoutMs << " ms, node = " << nodeId_;
+    logInfo(msg.str());
+
+    if (VCS_WaitForHomingAttained(keyHandle_, nodeId_, timeoutMs, &errorCode) == 0) {
+        logError("VCS_WaitForHomingAttained", MMC_FAILED, errorCode);
+        return false;
+    }
+
+    return true;
+}
+
+bool EPOSController::getHomingState(bool& homingAttained, bool& homingError) {
+    unsigned int errorCode = 0;
+    int attained = 0;
+    int error = 0;
+
+    if (VCS_GetHomingState(keyHandle_, nodeId_, &attained, &error, &errorCode) == 0) {
+        logError("VCS_GetHomingState", MMC_FAILED, errorCode);
+        return false;
+    }
+
+    homingAttained = (attained != 0);
+    homingError = (error != 0);
+    return true;
+}
+
 bool EPOSController::enable() {
     unsigned int errorCode = 0;
     logInfo("Enabling device");
