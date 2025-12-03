@@ -9,49 +9,6 @@ Maxon EPOS4モーターコントローラ用の`ros2_control`ハードウェア�
 
 **通信方式:** USB経由でEPOS4ハードウェアデバイスとCANopenプロトコルで通信
 
-## ビルド・実行コマンド
-
-### Docker開発環境（推奨）
-
-```bash
-# イメージのビルド
-docker compose build
-
-# 開発シェル（ソースマウントによるライブ編集対応）
-docker compose run shooter
-
-# 実機 + キーボード操作
-docker compose --profile real --profile keyboard up
-
-# 実機 + ボディトラッキング
-docker compose --profile real --profile body up
-
-# Gazeboシミュレーション + キーボード操作
-docker compose --profile sim --profile keyboard up
-
-# Gazeboシミュレーション + ボディトラッキング
-docker compose --profile sim --profile body up
-```
-
-### ネイティブビルド（ROS 2ワークスペースルートから）
-
-```bash
-# パッケージのビルド
-colcon build --packages-select epos shooter
-
-# IDE対応のためcompile_commands.jsonを生成してビルド
-colcon build --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-
-# shooterロボットの起動
-ros2 launch shooter shooter.launch.py
-
-# ボディトラッカーの起動（別ターミナル）
-ros2 launch shooter body_tracker.launch.py
-
-# キーボードテレオペ（別ターミナル）
-ros2 run teleop_twist_keyboard teleop_twist_keyboard
-```
-
 ## アーキテクチャ
 
 ### レイヤー構成

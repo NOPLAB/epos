@@ -1,4 +1,4 @@
-<library path="epos">
+<library path="epos_hardware">
   <class name="epos/EPOSHardwareInterface"
          type="epos::EPOSHardwareInterface"
          base_class_type="hardware_interface::SystemInterface">

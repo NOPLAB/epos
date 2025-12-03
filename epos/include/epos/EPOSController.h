@@ -82,6 +82,7 @@ private:
     // Helper functions
     void logError(const std::string& functionName, int result, unsigned int errorCode);
     void logInfo(const std::string& message);
+    void logDebug(const std::string& message);
     bool openDevice();
     bool prepareDevice();
 };

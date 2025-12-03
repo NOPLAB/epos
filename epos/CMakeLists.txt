@@ -8,6 +8,11 @@ endif()
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Default to Release build (defines NDEBUG, disables debug logs)
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(hardware_interface REQUIRED)

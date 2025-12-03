@@ -40,6 +40,14 @@ void EPOSController::logInfo(const std::string& message) {
     std::cout << "EPOSController: " << message << std::endl;
 }
 
+void EPOSController::logDebug(const std::string& message) {
+#ifndef NDEBUG
+    std::cout << "EPOSController [DEBUG]: " << message << std::endl;
+#else
+    (void)message;
+#endif
+}
+
 std::string EPOSController::getErrorString(unsigned int errorCode) {
     char errorInfo[512];
     VCS_GetErrorInfo(errorCode, errorInfo, 512);
@@ -226,7 +234,7 @@ bool EPOSController::moveWithVelocity(long targetVelocity) {
     unsigned int errorCode = 0;
     std::stringstream msg;
     msg << "Moving with target velocity = " << targetVelocity << " rpm, node = " << nodeId_;
-    logInfo(msg.str());
+    logDebug(msg.str());
 
     if (VCS_MoveWithVelocity(keyHandle_, nodeId_, targetVelocity, &errorCode) == 0) {
         logError("VCS_MoveWithVelocity", MMC_FAILED, errorCode);

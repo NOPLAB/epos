@@ -38,6 +38,18 @@ services:
       ros2 run teleop_twist_keyboard teleop_twist_keyboard
       --ros-args -r /cmd_vel:=/diff_drive_controller/cmd_vel_unstamped
 
+  joystick:
+    image: shooter-ros-humble
+    container_name: shooter-joystick
+    privileged: true
+    volumes:
+      - /dev/input:/dev/input
+    profiles:
+      - joystick
+    command: >
+      ros2 launch teleop_twist_joy teleop-launch.py
+      joy_vel:=/diff_drive_controller/cmd_vel_unstamped
+
   body_tracker:
     image: shooter-ros-humble
     container_name: shooter-body-tracker

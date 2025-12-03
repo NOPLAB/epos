@@ -1,11 +1,13 @@
 #include <rclcpp/rclcpp.hpp>
-#include <geometry_msgs/msg/twist.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/joint_state.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/dnn.hpp>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <fstream>
+#include <cmath>
 
 class BodyTrackerNode : public rclcpp::Node
 {
@@ -13,18 +15,24 @@ public:
   BodyTrackerNode() : Node("body_tracker")
   {
     // Parameters
-    declare_parameter("kp", 0.0);
-    declare_parameter("ki", 0.0);
-    declare_parameter("max_angular_velocity", 1.5);
+    declare_parameter("pan_kp", 0.002);
+    declare_parameter("pan_ki", 0.0001);
+    declare_parameter("tilt_kp", 0.002);
+    declare_parameter("tilt_ki", 0.0001);
+    declare_parameter("pan_limit", M_PI);        // ±π rad
+    declare_parameter("tilt_limit", M_PI / 2);   // ±π/2 rad
     declare_parameter("image_topic", "/camera/image_raw");
     declare_parameter("use_camera_device", true);
     declare_parameter("camera_device_id", 0);
     declare_parameter("confidence_threshold", 0.5);
     declare_parameter("nms_threshold", 0.4);
 
-    kp_ = get_parameter("kp").as_double();
-    ki_ = get_parameter("ki").as_double();
-    max_angular_velocity_ = get_parameter("max_angular_velocity").as_double();
+    pan_kp_ = get_parameter("pan_kp").as_double();
+    pan_ki_ = get_parameter("pan_ki").as_double();
+    tilt_kp_ = get_parameter("tilt_kp").as_double();
+    tilt_ki_ = get_parameter("tilt_ki").as_double();
+    pan_limit_ = get_parameter("pan_limit").as_double();
+    tilt_limit_ = get_parameter("tilt_limit").as_double();
     use_camera_device_ = get_parameter("use_camera_device").as_bool();
     camera_device_id_ = get_parameter("camera_device_id").as_int();
     confidence_threshold_ = get_parameter("confidence_threshold").as_double();
@@ -55,9 +63,14 @@ public:
 
     RCLCPP_INFO(get_logger(), "YOLO model loaded successfully (%zu classes)", class_names_.size());
 
-    // Publisher
-    cmd_vel_pub_ = create_publisher<geometry_msgs::msg::Twist>(
-      "/diff_drive_controller/cmd_vel_unstamped", 10);
+    // Publisher for pan-tilt position commands
+    pan_tilt_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
+      "/pan_tilt_controller/commands", 10);
+
+    // Subscriber for current joint state
+    joint_state_sub_ = create_subscription<sensor_msgs::msg::JointState>(
+      "/joint_states", 10,
+      std::bind(&BodyTrackerNode::joint_state_callback, this, std::placeholders::_1));
 
     if (use_camera_device_) {
       // Use OpenCV VideoCapture directly
@@ -80,7 +93,8 @@ public:
         std::bind(&BodyTrackerNode::image_callback, this, std::placeholders::_1));
     }
 
-    RCLCPP_INFO(get_logger(), "Body tracker node started (Kp=%.4f, Ki=%.4f)", kp_, ki_);
+    RCLCPP_INFO(get_logger(), "Body tracker node started (pan: Kp=%.4f Ki=%.5f, tilt: Kp=%.4f Ki=%.5f)",
+                pan_kp_, pan_ki_, tilt_kp_, tilt_ki_);
   }
 
   ~BodyTrackerNode()
@@ -91,6 +105,17 @@ public:
   }
 
 private:
+  void joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr msg)
+  {
+    for (size_t i = 0; i < msg->name.size(); ++i) {
+      if (msg->name[i] == "pan_joint" && i < msg->position.size()) {
+        current_pan_ = msg->position[i];
+      } else if (msg->name[i] == "tilt_joint" && i < msg->position.size()) {
+        current_tilt_ = msg->position[i];
+      }
+    }
+  }
+
   void camera_callback()
   {
     cv::Mat frame;
@@ -161,11 +186,8 @@ private:
     std::vector<int> indices;
     cv::dnn::NMSBoxes(boxes, confidences, confidence_threshold_, nms_threshold_, indices);
 
-    double angular_velocity = 0.0;
-    double error = 0.0;
-    double p_term = 0.0;
-    double i_term = 0.0;
     int frame_center_x = width / 2;
+    int frame_center_y = height / 2;
     bool body_detected = false;
     float best_confidence = 0.0;
     cv::Rect best_box;
@@ -179,25 +201,47 @@ private:
       }
     }
 
+    double pan_error = 0.0;
+    double tilt_error = 0.0;
+    double pan_p_term = 0.0, pan_i_term = 0.0;
+    double tilt_p_term = 0.0, tilt_i_term = 0.0;
+    double target_pan = current_pan_;
+    double target_tilt = current_tilt_;
+
     if (body_detected) {
       // Calculate body center
       int body_center_x = best_box.x + best_box.width / 2;
       int body_center_y = best_box.y + best_box.height / 2;
 
-      // Calculate error (normalized to -1.0 ~ 1.0)
-      error = static_cast<double>(frame_center_x - body_center_x) / frame_center_x;
+      // Calculate errors (normalized to -1.0 ~ 1.0)
+      // Pan: positive error means body is to the left, need to rotate left (positive pan)
+      pan_error = static_cast<double>(frame_center_x - body_center_x) / frame_center_x;
+      // Tilt: positive error means body is above center, need to tilt up (negative tilt)
+      tilt_error = static_cast<double>(frame_center_y - body_center_y) / frame_center_y;
 
-      // PI control
-      integral_error_ += error;
+      // PI control for pan
+      pan_integral_error_ += pan_error;
+      double pan_max_integral = pan_limit_ / (pan_ki_ + 1e-6);
+      pan_integral_error_ = std::clamp(pan_integral_error_, -pan_max_integral, pan_max_integral);
+      pan_p_term = pan_kp_ * pan_error;
+      pan_i_term = pan_ki_ * pan_integral_error_;
+      double pan_delta = pan_p_term + pan_i_term;
 
-      // Anti-windup
-      double max_integral = max_angular_velocity_ / ki_;
-      integral_error_ = std::clamp(integral_error_, -max_integral, max_integral);
+      // PI control for tilt
+      tilt_integral_error_ += tilt_error;
+      double tilt_max_integral = tilt_limit_ / (tilt_ki_ + 1e-6);
+      tilt_integral_error_ = std::clamp(tilt_integral_error_, -tilt_max_integral, tilt_max_integral);
+      tilt_p_term = tilt_kp_ * tilt_error;
+      tilt_i_term = tilt_ki_ * tilt_integral_error_;
+      double tilt_delta = -(tilt_p_term + tilt_i_term);  // Negative because tilt axis is inverted
 
-      p_term = kp_ * error;
-      i_term = ki_ * integral_error_;
-      angular_velocity = p_term + i_term;
-      angular_velocity = std::clamp(angular_velocity, -max_angular_velocity_, max_angular_velocity_);
+      // Calculate target positions
+      target_pan = current_pan_ + pan_delta;
+      target_tilt = current_tilt_ + tilt_delta;
+
+      // Clamp to limits
+      target_pan = std::clamp(target_pan, -pan_limit_, pan_limit_);
+      target_tilt = std::clamp(target_tilt, -tilt_limit_, tilt_limit_);
 
       // Draw body rectangle
       cv::rectangle(frame, best_box, cv::Scalar(0, 255, 0), 2);
@@ -213,7 +257,7 @@ private:
         cv::Scalar(0, 255, 0), cv::MARKER_CROSS, 20, 2);
 
       // Draw line from center to body
-      cv::line(frame, cv::Point(frame_center_x, height / 2),
+      cv::line(frame, cv::Point(frame_center_x, frame_center_y),
         cv::Point(body_center_x, body_center_y), cv::Scalar(255, 255, 0), 2);
 
       // Draw all detected persons (faded)
@@ -224,35 +268,44 @@ private:
       }
     } else {
       // No body detected - slowly reset integral
-      integral_error_ *= 0.95;
+      pan_integral_error_ *= 0.95;
+      tilt_integral_error_ *= 0.95;
     }
 
-    // Publish velocity command
-    auto msg = geometry_msgs::msg::Twist();
-    msg.angular.z = angular_velocity;
-    cmd_vel_pub_->publish(msg);
+    // Publish pan-tilt position command
+    auto msg = std_msgs::msg::Float64MultiArray();
+    msg.data.resize(2);
+    msg.data[0] = target_pan;
+    msg.data[1] = target_tilt;
+    pan_tilt_pub_->publish(msg);
 
     // === Draw UI ===
-    draw_ui(frame, body_detected, error, p_term, i_term, angular_velocity, indices.size());
+    draw_ui(frame, body_detected, pan_error, tilt_error,
+            pan_p_term, pan_i_term, tilt_p_term, tilt_i_term,
+            target_pan, target_tilt, indices.size());
 
     cv::imshow("Body Tracker", frame);
     cv::waitKey(1);
   }
 
-  void draw_ui(cv::Mat& frame, bool body_detected, double error,
-               double p_term, double i_term, double angular_velocity, size_t num_detections)
+  void draw_ui(cv::Mat& frame, bool body_detected,
+               double pan_error, double tilt_error,
+               double pan_p, double pan_i, double tilt_p, double tilt_i,
+               double target_pan, double target_tilt, size_t num_detections)
   {
     int w = frame.cols;
     int h = frame.rows;
 
-    // Draw center line
+    // Draw crosshair at center
     cv::line(frame, cv::Point(w / 2, 0), cv::Point(w / 2, h),
+      cv::Scalar(100, 100, 100), 1);
+    cv::line(frame, cv::Point(0, h / 2), cv::Point(w, h / 2),
       cv::Scalar(100, 100, 100), 1);
 
     // Status panel background
-    cv::rectangle(frame, cv::Point(10, 10), cv::Point(250, 180),
+    cv::rectangle(frame, cv::Point(10, 10), cv::Point(280, 220),
       cv::Scalar(0, 0, 0), cv::FILLED);
-    cv::rectangle(frame, cv::Point(10, 10), cv::Point(250, 180),
+    cv::rectangle(frame, cv::Point(10, 10), cv::Point(280, 220),
       cv::Scalar(100, 100, 100), 1);
 
     // Status text
@@ -271,33 +324,46 @@ private:
     cv::putText(frame, buf, cv::Point(20, 55),
       cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(200, 200, 200), 1);
 
-    // PI values
-    snprintf(buf, sizeof(buf), "Error: %+.3f", error);
-    cv::putText(frame, buf, cv::Point(20, 80),
-      cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 255), 1);
-
-    snprintf(buf, sizeof(buf), "P: %+.4f", p_term);
-    cv::putText(frame, buf, cv::Point(20, 100),
-      cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 200, 200), 1);
-
-    snprintf(buf, sizeof(buf), "I: %+.4f", i_term);
-    cv::putText(frame, buf, cv::Point(20, 120),
-      cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(200, 200, 255), 1);
-
-    snprintf(buf, sizeof(buf), "Cmd: %+.3f rad/s", angular_velocity);
-    cv::putText(frame, buf, cv::Point(20, 140),
-      cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(255, 255, 0), 1);
-
-    // Gains
-    snprintf(buf, sizeof(buf), "Kp=%.4f Ki=%.5f", kp_, ki_);
-    cv::putText(frame, buf, cv::Point(20, 170),
+    // Pan control info
+    cv::putText(frame, "--- PAN ---", cv::Point(20, 80),
       cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(150, 150, 150), 1);
 
-    // Error bar (bottom of screen)
+    snprintf(buf, sizeof(buf), "Err: %+.3f  P:%+.4f I:%+.4f", pan_error, pan_p, pan_i);
+    cv::putText(frame, buf, cv::Point(20, 100),
+      cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 200, 200), 1);
+
+    snprintf(buf, sizeof(buf), "Cur: %+.3f  Tgt: %+.3f rad", current_pan_, target_pan);
+    cv::putText(frame, buf, cv::Point(20, 118),
+      cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 0), 1);
+
+    // Tilt control info
+    cv::putText(frame, "--- TILT ---", cv::Point(20, 140),
+      cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(150, 150, 150), 1);
+
+    snprintf(buf, sizeof(buf), "Err: %+.3f  P:%+.4f I:%+.4f", tilt_error, tilt_p, tilt_i);
+    cv::putText(frame, buf, cv::Point(20, 160),
+      cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(200, 200, 255), 1);
+
+    snprintf(buf, sizeof(buf), "Cur: %+.3f  Tgt: %+.3f rad", current_tilt_, target_tilt);
+    cv::putText(frame, buf, cv::Point(20, 178),
+      cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 0), 1);
+
+    // Gains
+    snprintf(buf, sizeof(buf), "Pan Kp=%.4f Ki=%.5f", pan_kp_, pan_ki_);
+    cv::putText(frame, buf, cv::Point(20, 200),
+      cv::FONT_HERSHEY_SIMPLEX, 0.35, cv::Scalar(150, 150, 150), 1);
+    snprintf(buf, sizeof(buf), "Tilt Kp=%.4f Ki=%.5f", tilt_kp_, tilt_ki_);
+    cv::putText(frame, buf, cv::Point(20, 215),
+      cv::FONT_HERSHEY_SIMPLEX, 0.35, cv::Scalar(150, 150, 150), 1);
+
+    // Pan error bar (bottom of screen)
     int bar_y = h - 40;
-    int bar_width = w - 40;
-    int bar_height = 20;
-    int bar_x = 20;
+    int bar_width = w - 80;
+    int bar_height = 15;
+    int bar_x = 40;
+
+    cv::putText(frame, "PAN", cv::Point(10, bar_y + 12),
+      cv::FONT_HERSHEY_SIMPLEX, 0.35, cv::Scalar(200, 200, 200), 1);
 
     // Bar background
     cv::rectangle(frame, cv::Point(bar_x, bar_y),
@@ -309,17 +375,20 @@ private:
       cv::Point(bar_x + bar_width / 2, bar_y + bar_height),
       cv::Scalar(255, 255, 255), 2);
 
-    // Error indicator
-    int error_pos = bar_x + bar_width / 2 - static_cast<int>(error * bar_width / 2);
-    error_pos = std::clamp(error_pos, bar_x, bar_x + bar_width);
-    cv::circle(frame, cv::Point(error_pos, bar_y + bar_height / 2),
-      8, cv::Scalar(0, 255, 255), cv::FILLED);
+    // Pan error indicator
+    int pan_pos = bar_x + bar_width / 2 - static_cast<int>(pan_error * bar_width / 2);
+    pan_pos = std::clamp(pan_pos, bar_x, bar_x + bar_width);
+    cv::circle(frame, cv::Point(pan_pos, bar_y + bar_height / 2),
+      6, cv::Scalar(0, 255, 255), cv::FILLED);
 
-    // Velocity gauge (right side)
+    // Tilt gauge (right side)
     int gauge_x = w - 50;
     int gauge_y = 80;
     int gauge_height = h - 160;
-    int gauge_width = 30;
+    int gauge_width = 25;
+
+    cv::putText(frame, "TILT", cv::Point(gauge_x - 5, gauge_y - 10),
+      cv::FONT_HERSHEY_SIMPLEX, 0.35, cv::Scalar(200, 200, 200), 1);
 
     // Gauge background
     cv::rectangle(frame, cv::Point(gauge_x, gauge_y),
@@ -331,28 +400,17 @@ private:
       cv::Point(gauge_x + gauge_width, gauge_y + gauge_height / 2),
       cv::Scalar(255, 255, 255), 1);
 
-    // Velocity bar
-    double vel_ratio = angular_velocity / max_angular_velocity_;
-    int vel_bar_height = static_cast<int>(std::abs(vel_ratio) * gauge_height / 2);
-    int vel_bar_y = gauge_y + gauge_height / 2;
-    cv::Scalar vel_color = (angular_velocity >= 0) ? cv::Scalar(0, 200, 0) : cv::Scalar(0, 0, 200);
-
-    if (angular_velocity >= 0) {
-      cv::rectangle(frame, cv::Point(gauge_x + 2, vel_bar_y - vel_bar_height),
-        cv::Point(gauge_x + gauge_width - 2, vel_bar_y), vel_color, cv::FILLED);
-    } else {
-      cv::rectangle(frame, cv::Point(gauge_x + 2, vel_bar_y),
-        cv::Point(gauge_x + gauge_width - 2, vel_bar_y + vel_bar_height), vel_color, cv::FILLED);
-    }
-
-    // Gauge label
-    cv::putText(frame, "VEL", cv::Point(gauge_x, gauge_y - 10),
-      cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(200, 200, 200), 1);
+    // Tilt error indicator
+    int tilt_pos = gauge_y + gauge_height / 2 - static_cast<int>(tilt_error * gauge_height / 2);
+    tilt_pos = std::clamp(tilt_pos, gauge_y, gauge_y + gauge_height);
+    cv::circle(frame, cv::Point(gauge_x + gauge_width / 2, tilt_pos),
+      6, cv::Scalar(0, 255, 255), cv::FILLED);
   }
 
   // ROS
-  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr pan_tilt_pub_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   // OpenCV / YOLO
@@ -362,16 +420,24 @@ private:
   cv::VideoCapture cap_;
 
   // Parameters
-  double kp_;
-  double ki_;
-  double max_angular_velocity_;
+  double pan_kp_;
+  double pan_ki_;
+  double tilt_kp_;
+  double tilt_ki_;
+  double pan_limit_;
+  double tilt_limit_;
   bool use_camera_device_;
   int camera_device_id_;
   double confidence_threshold_;
   double nms_threshold_;
 
+  // Current joint positions
+  double current_pan_ = 0.0;
+  double current_tilt_ = 0.0;
+
   // PI control state
-  double integral_error_ = 0.0;
+  double pan_integral_error_ = 0.0;
+  double tilt_integral_error_ = 0.0;
 };
 
 int main(int argc, char** argv)

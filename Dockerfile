@@ -21,6 +21,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ros-humble-ros2-controllers \
     ros-humble-xacro \
     ros-humble-teleop-twist-keyboard \
+    ros-humble-joy \
+    ros-humble-teleop-twist-joy \
     ros-humble-cv-bridge \
     libopencv-dev
 
