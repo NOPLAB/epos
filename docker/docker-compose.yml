@@ -62,8 +62,8 @@ services:
       ros2 run shooter_control pan_tilt_joy_node --ros-args
       -p pan_axis:=3
       -p tilt_axis:=4
-      -p pan_scale:=0.005
-      -p tilt_scale:=0.005
+      -p pan_scale:=0.01
+      -p tilt_scale:=0.02
       -p enable_tilt:=$${ENABLE_TILT:-false}"
 
   body_tracker:
