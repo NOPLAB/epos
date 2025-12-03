@@ -11,8 +11,10 @@ find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(epos REQUIRED)
 
 add_executable(body_tracker_node src/body_tracker_node.cpp)
 ament_target_dependencies(body_tracker_node
@@ -26,7 +28,14 @@ ament_target_dependencies(body_tracker_node
 target_include_directories(body_tracker_node PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(body_tracker_node ${OpenCV_LIBS})
 
-install(TARGETS body_tracker_node
+add_executable(pan_tilt_homing_node src/pan_tilt_homing_node.cpp)
+ament_target_dependencies(pan_tilt_homing_node
+  rclcpp
+  std_srvs
+  epos
+)
+
+install(TARGETS body_tracker_node pan_tilt_homing_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

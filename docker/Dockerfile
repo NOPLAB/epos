@@ -69,7 +69,7 @@ RUN . /opt/ros/humble/setup.sh && \
     colcon build --symlink-install
 
 # Setup entrypoint
-COPY docker-entrypoint.sh /docker-entrypoint.sh
+COPY docker/docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
 ENTRYPOINT ["/docker-entrypoint.sh"]

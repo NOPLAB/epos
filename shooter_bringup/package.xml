@@ -10,6 +10,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>shooter_description</depend>
+  <depend>shooter_control</depend>
   <depend>epos</depend>
 
   <exec_depend>controller_manager</exec_depend>

@@ -3,16 +3,18 @@ services:
   # Real Hardware Services
   # ============================================
   shooter:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     image: shooter-ros-humble
     container_name: shooter-bringup
     privileged: true
     volumes:
       - /dev:/dev
-      - ./epos:/ros2_ws/src/epos
-      - ./shooter_description:/ros2_ws/src/shooter_description
-      - ./shooter_bringup:/ros2_ws/src/shooter_bringup
-      - ./shooter_control:/ros2_ws/src/shooter_control
+      - ../epos:/ros2_ws/src/epos
+      - ../shooter_description:/ros2_ws/src/shooter_description
+      - ../shooter_bringup:/ros2_ws/src/shooter_bringup
+      - ../shooter_control:/ros2_ws/src/shooter_control
     stdin_open: true
     tty: true
     command: bash
@@ -27,7 +29,7 @@ services:
       - EPOS_USB_DEVICE=${EPOS_USB_DEVICE:-USB0}
     profiles:
       - real
-    command: ros2 launch shooter_bringup shooter.launch.py
+    command: ros2 launch shooter_bringup shooter_with_homing.launch.py
 
   keyboard:
     image: shooter-ros-humble
@@ -72,13 +74,13 @@ services:
   # ============================================
   sim:
     build:
-      context: .
-      dockerfile: Dockerfile.sim
+      context: ..
+      dockerfile: docker/Dockerfile.sim
     image: shooter-sim
     container_name: shooter-simulation
     volumes:
-      - ./shooter_description:/ros2_ws/src/shooter_description
-      - ./shooter_simulation:/ros2_ws/src/shooter_simulation
+      - ../shooter_description:/ros2_ws/src/shooter_description
+      - ../shooter_simulation:/ros2_ws/src/shooter_simulation
       - /tmp/.X11-unix:/tmp/.X11-unix
     environment:
       - DISPLAY=${DISPLAY}
@@ -91,8 +93,8 @@ services:
 
   sim-run:
     build:
-      context: .
-      dockerfile: Dockerfile.sim
+      context: ..
+      dockerfile: docker/Dockerfile.sim
     image: shooter-sim
     container_name: shooter-simulation-run
     volumes:

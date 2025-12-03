@@ -32,12 +32,14 @@
       <state_interface name="position"/>
       <state_interface name="velocity"/>
     </joint>
+    <!-- tilt_joint temporarily disabled
     <joint name="tilt_joint">
       <param name="node_id">4</param>
       <command_interface name="position"/>
       <state_interface name="position"/>
       <state_interface name="velocity"/>
     </joint>
+    -->
   </ros2_control>
 
 </robot>

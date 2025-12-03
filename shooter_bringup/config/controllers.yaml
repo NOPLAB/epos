@@ -56,4 +56,4 @@ pan_tilt_controller:
   ros__parameters:
     joints:
       - pan_joint
-      - tilt_joint
+      # - tilt_joint  # Temporarily disabled
