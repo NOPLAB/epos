@@ -33,20 +33,21 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # Create ROS workspace
 WORKDIR /ros2_ws/src
 
-# Copy only the shooter package (no real hardware needed for sim)
-COPY shooter /ros2_ws/src/shooter
+# Copy simulation packages (no real hardware needed for sim)
+COPY shooter_description /ros2_ws/src/shooter_description
+COPY shooter_simulation /ros2_ws/src/shooter_simulation
 
 # Build the workspace
 WORKDIR /ros2_ws
 RUN . /opt/ros/humble/setup.sh && \
-    colcon build --symlink-install --packages-select shooter
+    colcon build --symlink-install
 
 # Setup entrypoint
 COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
 # Set environment for Gazebo
-ENV GZ_SIM_RESOURCE_PATH=/ros2_ws/src/shooter/worlds
+ENV GZ_SIM_RESOURCE_PATH=/ros2_ws/src/shooter_simulation/worlds
 ENV GZ_VERSION=harmonic
 
 ENTRYPOINT ["/docker-entrypoint.sh"]

@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ros2_control - Real Hardware (EPOS4) -->
+  <ros2_control name="epos_system" type="system">
+    <hardware>
+      <plugin>epos/EPOSHardwareInterface</plugin>
+      <param name="device_name">EPOS4</param>
+      <param name="protocol_stack_name">MAXON SERIAL V2</param>
+      <param name="interface_name">USB</param>
+      <param name="port_name">${usb_port}</param>
+      <param name="baudrate">1000000</param>
+      <param name="counts_per_revolution">4096</param>
+    </hardware>
+    <!-- Velocity control joints (node_id 1, 2) -->
+    <joint name="front_right_wheel_joint">
+      <param name="node_id">1</param>
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="front_left_wheel_joint">
+      <param name="node_id">2</param>
+      <command_interface name="velocity"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <!-- Position control joints (node_id 3, 4) -->
+    <joint name="pan_joint">
+      <param name="node_id">3</param>
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+    <joint name="tilt_joint">
+      <param name="node_id">4</param>
+      <command_interface name="position"/>
+      <state_interface name="position"/>
+      <state_interface name="velocity"/>
+    </joint>
+  </ros2_control>
+
+</robot>

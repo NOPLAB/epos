@@ -15,6 +15,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     build-essential \
     cmake \
     git \
+    wget \
     udev \
     usbutils \
     ros-humble-ros2-control \
@@ -55,7 +56,12 @@ WORKDIR /ros2_ws/src
 
 # Copy project sources
 COPY epos /ros2_ws/src/epos
-COPY shooter /ros2_ws/src/shooter
+COPY shooter_description /ros2_ws/src/shooter_description
+COPY shooter_bringup /ros2_ws/src/shooter_bringup
+COPY shooter_control /ros2_ws/src/shooter_control
+
+# Download YOLO models
+RUN /ros2_ws/src/shooter_control/scripts/download_models.sh
 
 # Build the workspace
 WORKDIR /ros2_ws

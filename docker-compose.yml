@@ -5,19 +5,21 @@ services:
   shooter:
     build: .
     image: shooter-ros-humble
-    container_name: shooter
+    container_name: shooter-bringup
     privileged: true
     volumes:
       - /dev:/dev
       - ./epos:/ros2_ws/src/epos
-      - ./shooter:/ros2_ws/src/shooter
+      - ./shooter_description:/ros2_ws/src/shooter_description
+      - ./shooter_bringup:/ros2_ws/src/shooter_bringup
+      - ./shooter_control:/ros2_ws/src/shooter_control
     stdin_open: true
     tty: true
     command: bash
 
   shooter-run:
     image: shooter-ros-humble
-    container_name: shooter-run
+    container_name: shooter-bringup-run
     privileged: true
     volumes:
       - /dev:/dev
@@ -25,11 +27,11 @@ services:
       - EPOS_USB_DEVICE=${EPOS_USB_DEVICE:-USB0}
     profiles:
       - real
-    command: ros2 launch shooter shooter.launch.py
+    command: ros2 launch shooter_bringup shooter.launch.py
 
   keyboard:
     image: shooter-ros-humble
-    container_name: shooter-keyboard
+    container_name: shooter-teleop-keyboard
     stdin_open: true
     tty: true
     profiles:
@@ -40,7 +42,7 @@ services:
 
   joystick:
     image: shooter-ros-humble
-    container_name: shooter-joystick
+    container_name: shooter-teleop-joystick
     privileged: true
     volumes:
       - /dev/input:/dev/input
@@ -52,7 +54,7 @@ services:
 
   body_tracker:
     image: shooter-ros-humble
-    container_name: shooter-body-tracker
+    container_name: shooter-control
     privileged: true
     volumes:
       - /dev/video0:/dev/video0
@@ -63,7 +65,7 @@ services:
     tty: true
     profiles:
       - body
-    command: ros2 launch shooter body_tracker.launch.py
+    command: ros2 launch shooter_control body_tracker.launch.py
 
   # ============================================
   # Simulation Services (Gazebo Sim)
@@ -73,9 +75,10 @@ services:
       context: .
       dockerfile: Dockerfile.sim
     image: shooter-sim
-    container_name: shooter-sim
+    container_name: shooter-simulation
     volumes:
-      - ./shooter:/ros2_ws/src/shooter
+      - ./shooter_description:/ros2_ws/src/shooter_description
+      - ./shooter_simulation:/ros2_ws/src/shooter_simulation
       - /tmp/.X11-unix:/tmp/.X11-unix
     environment:
       - DISPLAY=${DISPLAY}
@@ -91,7 +94,7 @@ services:
       context: .
       dockerfile: Dockerfile.sim
     image: shooter-sim
-    container_name: shooter-sim-run
+    container_name: shooter-simulation-run
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
     environment:
@@ -99,7 +102,7 @@ services:
       - QT_X11_NO_MITSHM=1
     profiles:
       - sim
-    command: ros2 launch shooter sim.launch.py
+    command: ros2 launch shooter_simulation sim.launch.py
 
 networks:
   default:
