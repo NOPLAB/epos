@@ -149,6 +149,13 @@ def generate_launch_description():
         output='screen'
     )
 
+    shooter_controller_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=['shooter_controller', '--controller-manager', '/controller_manager'],
+        output='screen'
+    )
+
     # Event handlers for homing mode
     # Start joint_state_broadcaster spawner after homing completes
     # The spawner will wait for controller_manager via --controller-manager-timeout
@@ -185,6 +192,14 @@ def generate_launch_description():
         )
     )
 
+    # Delay shooter_controller after pan_tilt_controller (common)
+    delay_shooter_controller = RegisterEventHandler(
+        event_handler=OnProcessExit(
+            target_action=pan_tilt_controller_spawner,
+            on_exit=[shooter_controller_spawner],
+        )
+    )
+
     return LaunchDescription([
         enable_homing_arg,
         robot_state_publisher_node,
@@ -199,4 +214,5 @@ def generate_launch_description():
         delay_diff_drive_controller_after_homing,
         # Common
         delay_pan_tilt_controller,
+        delay_shooter_controller,
     ])

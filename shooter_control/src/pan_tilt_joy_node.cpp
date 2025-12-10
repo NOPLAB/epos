@@ -15,7 +15,7 @@ public:
     declare_parameter("tilt_velocity", 1.0);    // Max velocity in rad/s at full deflection
     declare_parameter("deadzone", 0.1);         // Joystick deadzone
     declare_parameter("shooter_trigger_axis", 5);  // RT trigger axis
-    declare_parameter("shooter_speed_rpm", 5000.0); // Shooter speed in RPM
+    declare_parameter("shooter_speed_rpm", 10000.0); // Shooter speed in RPM
 
     // Get parameters
     pan_axis_ = get_parameter("pan_axis").as_int();

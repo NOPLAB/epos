@@ -63,6 +63,30 @@ hardware_interface::CallbackReturn EPOSHardwareInterface::on_init(
       joints_[i].counts_per_revolution = counts_per_revolution_;
     }
 
+    // Get velocity profile parameters (optional)
+    if (info_.joints[i].parameters.count("velocity_acceleration")) {
+      joints_[i].velocity_acceleration = static_cast<unsigned int>(
+        std::stoul(info_.joints[i].parameters.at("velocity_acceleration")));
+    }
+    if (info_.joints[i].parameters.count("velocity_deceleration")) {
+      joints_[i].velocity_deceleration = static_cast<unsigned int>(
+        std::stoul(info_.joints[i].parameters.at("velocity_deceleration")));
+    }
+
+    // Get position profile parameters (optional)
+    if (info_.joints[i].parameters.count("position_velocity")) {
+      joints_[i].position_velocity = static_cast<unsigned int>(
+        std::stoul(info_.joints[i].parameters.at("position_velocity")));
+    }
+    if (info_.joints[i].parameters.count("position_acceleration")) {
+      joints_[i].position_acceleration = static_cast<unsigned int>(
+        std::stoul(info_.joints[i].parameters.at("position_acceleration")));
+    }
+    if (info_.joints[i].parameters.count("position_deceleration")) {
+      joints_[i].position_deceleration = static_cast<unsigned int>(
+        std::stoul(info_.joints[i].parameters.at("position_deceleration")));
+    }
+
     // Verify command interfaces (velocity and/or position)
     bool has_velocity_cmd = false;
     bool has_position_cmd = false;
@@ -101,8 +125,9 @@ hardware_interface::CallbackReturn EPOSHardwareInterface::on_init(
 
     RCLCPP_INFO(
       rclcpp::get_logger("EPOSHardwareInterface"),
-      "Joint '%s' configured with node_id=%d, counts_per_rev=%.0f",
-      joints_[i].name.c_str(), joints_[i].node_id, joints_[i].counts_per_revolution);
+      "Joint '%s' configured with node_id=%d, counts_per_rev=%.0f, vel_accel=%u, vel_decel=%u",
+      joints_[i].name.c_str(), joints_[i].node_id, joints_[i].counts_per_revolution,
+      joints_[i].velocity_acceleration, joints_[i].velocity_deceleration);
   }
 
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -263,7 +288,8 @@ hardware_interface::return_type EPOSHardwareInterface::perform_command_mode_swit
           "Failed to activate velocity mode for joint '%s'", joint.name.c_str());
         return hardware_interface::return_type::ERROR;
       }
-      if (!joint.controller->setVelocityProfile(10000, 10000)) {
+      if (!joint.controller->setVelocityProfile(
+            joint.velocity_acceleration, joint.velocity_deceleration)) {
         RCLCPP_ERROR(
           rclcpp::get_logger("EPOSHardwareInterface"),
           "Failed to set velocity profile for joint '%s'", joint.name.c_str());
@@ -271,7 +297,8 @@ hardware_interface::return_type EPOSHardwareInterface::perform_command_mode_swit
       }
       RCLCPP_INFO(
         rclcpp::get_logger("EPOSHardwareInterface"),
-        "Joint '%s' switched to velocity mode", joint.name.c_str());
+        "Joint '%s' switched to velocity mode (accel=%u, decel=%u)",
+        joint.name.c_str(), joint.velocity_acceleration, joint.velocity_deceleration);
     } else if (joint.target_mode == ControlMode::POSITION) {
       if (!joint.controller->activatePositionMode()) {
         RCLCPP_ERROR(
@@ -279,7 +306,8 @@ hardware_interface::return_type EPOSHardwareInterface::perform_command_mode_swit
           "Failed to activate position mode for joint '%s'", joint.name.c_str());
         return hardware_interface::return_type::ERROR;
       }
-      if (!joint.controller->setPositionProfile(5000, 10000, 10000)) {
+      if (!joint.controller->setPositionProfile(
+            joint.position_velocity, joint.position_acceleration, joint.position_deceleration)) {
         RCLCPP_ERROR(
           rclcpp::get_logger("EPOSHardwareInterface"),
           "Failed to set position profile for joint '%s'", joint.name.c_str());
@@ -291,7 +319,8 @@ hardware_interface::return_type EPOSHardwareInterface::perform_command_mode_swit
       joint.position_command = (static_cast<double>(current_pos) / joint.counts_per_revolution) * 2.0 * M_PI;
       RCLCPP_INFO(
         rclcpp::get_logger("EPOSHardwareInterface"),
-        "Joint '%s' switched to position mode", joint.name.c_str());
+        "Joint '%s' switched to position mode (vel=%u, accel=%u, decel=%u)",
+        joint.name.c_str(), joint.position_velocity, joint.position_acceleration, joint.position_deceleration);
     }
 
     joint.control_mode = joint.target_mode;

@@ -75,6 +75,13 @@ private:
     ControlMode target_mode{ControlMode::NONE};
     std::unique_ptr<EPOSController> controller;
     double counts_per_revolution{4096.0};  // Per-joint counts per revolution
+    // Velocity profile parameters (RPM/s)
+    unsigned int velocity_acceleration{10000};
+    unsigned int velocity_deceleration{10000};
+    // Position profile parameters
+    unsigned int position_velocity{5000};        // RPM
+    unsigned int position_acceleration{10000};   // RPM/s
+    unsigned int position_deceleration{10000};   // RPM/s
   };
 
   std::vector<JointState> joints_;
