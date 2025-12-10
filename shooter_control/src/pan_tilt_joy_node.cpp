@@ -80,6 +80,12 @@ private:
     cmd.data = {pan_vel, tilt_vel};
     command_pub_->publish(cmd);
 
+    // Debug log (throttled to avoid spam)
+    if (pan_vel != 0.0 || tilt_vel != 0.0) {
+      RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500,
+        "Publishing cmd: pan=%.3f, tilt=%.3f rad/s", pan_vel, tilt_vel);
+    }
+
     // Handle shooter trigger (RT button)
     // RT axis: 1.0 = not pressed, -1.0 = fully pressed
     if (static_cast<size_t>(shooter_trigger_axis_) < msg->axes.size()) {

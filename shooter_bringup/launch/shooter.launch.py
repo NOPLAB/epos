@@ -26,10 +26,12 @@ def generate_launch_description():
     pan_speed_switch = int(os.environ.get('PAN_SPEED_SWITCH', '4500'))
     pan_speed_index = int(os.environ.get('PAN_SPEED_INDEX', '750'))
     pan_center_offset = int(os.environ.get('PAN_CENTER_OFFSET', '1650000'))
+    pan_center_velocity = int(os.environ.get('PAN_CENTER_VELOCITY', '13500'))
     tilt_homing_accel = int(os.environ.get('TILT_HOMING_ACCEL', '1250'))
     tilt_speed_switch = int(os.environ.get('TILT_SPEED_SWITCH', '750'))
     tilt_speed_index = int(os.environ.get('TILT_SPEED_INDEX', '125'))
     tilt_center_offset = int(os.environ.get('TILT_CENTER_OFFSET', '110000'))
+    tilt_center_velocity = int(os.environ.get('TILT_CENTER_VELOCITY', '2250'))
     homing_timeout = int(os.environ.get('HOMING_TIMEOUT', '60000'))
 
     # Launch arguments
@@ -69,10 +71,12 @@ def generate_launch_description():
             'pan.speed_switch': pan_speed_switch,
             'pan.speed_index': pan_speed_index,
             'pan.center_offset': pan_center_offset,
+            'pan.center_velocity': pan_center_velocity,
             'tilt.homing_acceleration': tilt_homing_accel,
             'tilt.speed_switch': tilt_speed_switch,
             'tilt.speed_index': tilt_speed_index,
             'tilt.center_offset': tilt_center_offset,
+            'tilt.center_velocity': tilt_center_velocity,
             'homing_timeout': homing_timeout,
             'auto_home': True,
             'exit_after_homing': True,

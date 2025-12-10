@@ -24,12 +24,14 @@ public:
     declare_parameter("pan.speed_switch", 4500);          // RPM (1.5x base)
     declare_parameter("pan.speed_index", 750);            // RPM (1.5x base)
     declare_parameter("pan.center_offset", 1650000);
+    declare_parameter("pan.center_velocity", 13500);      // RPM (velocity when returning to center)
 
     // Tilt homing parameters
     declare_parameter("tilt.homing_acceleration", 1250);  // RPM/s (1/4 base)
     declare_parameter("tilt.speed_switch", 750);          // RPM (1/4 base)
     declare_parameter("tilt.speed_index", 125);           // RPM (1/4 base)
     declare_parameter("tilt.center_offset", 110000);
+    declare_parameter("tilt.center_velocity", 2250);      // RPM (velocity when returning to center)
 
     declare_parameter("homing_timeout", 60000);           // ms
 
@@ -47,11 +49,13 @@ public:
     pan_speed_switch_ = get_parameter("pan.speed_switch").as_int();
     pan_speed_index_ = get_parameter("pan.speed_index").as_int();
     pan_center_offset_ = get_parameter("pan.center_offset").as_int();
+    pan_center_velocity_ = get_parameter("pan.center_velocity").as_int();
 
     tilt_homing_acceleration_ = get_parameter("tilt.homing_acceleration").as_int();
     tilt_speed_switch_ = get_parameter("tilt.speed_switch").as_int();
     tilt_speed_index_ = get_parameter("tilt.speed_index").as_int();
     tilt_center_offset_ = get_parameter("tilt.center_offset").as_int();
+    tilt_center_velocity_ = get_parameter("tilt.center_velocity").as_int();
 
     homing_timeout_ = get_parameter("homing_timeout").as_int();
 
@@ -164,6 +168,7 @@ private:
     const int spd_switch = is_pan ? pan_speed_switch_ : tilt_speed_switch_;
     const int spd_index = is_pan ? pan_speed_index_ : tilt_speed_index_;
     const int center_offset = is_pan ? pan_center_offset_ : tilt_center_offset_;
+    const int center_velocity = is_pan ? pan_center_velocity_ : tilt_center_velocity_;
 
     if (!controller->setHomingParameter(
           accel, spd_switch, spd_index,
@@ -201,7 +206,7 @@ private:
       return false;
     }
 
-    if (!controller->setPositionProfile(spd_switch * 3, accel, accel)) {
+    if (!controller->setPositionProfile(center_velocity, accel, accel)) {
       RCLCPP_ERROR(get_logger(), "[%s] Failed to set position profile", axis_name.c_str());
       return false;
     }
@@ -245,10 +250,12 @@ private:
   int pan_speed_switch_;
   int pan_speed_index_;
   int pan_center_offset_;
+  int pan_center_velocity_;
   int tilt_homing_acceleration_;
   int tilt_speed_switch_;
   int tilt_speed_index_;
   int tilt_center_offset_;
+  int tilt_center_velocity_;
   int homing_timeout_;
 
   // State

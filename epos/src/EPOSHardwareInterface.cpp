@@ -329,6 +329,15 @@ hardware_interface::return_type EPOSHardwareInterface::write(
       // Convert rad/s to RPM
       long velocity_rpm = static_cast<long>((joint.velocity_command * 60.0) / (2.0 * M_PI));
 
+      // Debug log for pan/tilt joints
+      if ((joint.name == "pan_joint" || joint.name == "tilt_joint") && velocity_rpm != 0) {
+        static rclcpp::Clock steady_clock(RCL_STEADY_TIME);
+        RCLCPP_INFO_THROTTLE(
+          rclcpp::get_logger("EPOSHardwareInterface"), steady_clock, 500,
+          "Writing velocity to '%s': cmd=%.3f rad/s -> %ld RPM",
+          joint.name.c_str(), joint.velocity_command, velocity_rpm);
+      }
+
       if (!joint.controller->moveWithVelocity(velocity_rpm)) {
         RCLCPP_WARN(
           rclcpp::get_logger("EPOSHardwareInterface"),
