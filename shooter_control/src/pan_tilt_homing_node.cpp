@@ -1,5 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_srvs/srv/trigger.hpp>
+#include <future>
 #include "epos/EPOSController.h"
 #include "epos/Definitions.h"
 
@@ -18,11 +19,19 @@ public:
     declare_parameter("pan_node_id", 3);
     declare_parameter("tilt_node_id", 4);
 
-    // Homing parameters
-    declare_parameter("homing_acceleration", 5000);  // RPM/s
-    declare_parameter("speed_switch", 3000);         // RPM (speed to search for switch)
-    declare_parameter("speed_index", 500);           // RPM (speed to search for index)
-    declare_parameter("homing_timeout", 30000);      // ms
+    // Pan homing parameters
+    declare_parameter("pan.homing_acceleration", 7500);   // RPM/s (1.5x base)
+    declare_parameter("pan.speed_switch", 4500);          // RPM (1.5x base)
+    declare_parameter("pan.speed_index", 750);            // RPM (1.5x base)
+    declare_parameter("pan.center_offset", 1650000);
+
+    // Tilt homing parameters
+    declare_parameter("tilt.homing_acceleration", 1250);  // RPM/s (1/4 base)
+    declare_parameter("tilt.speed_switch", 750);          // RPM (1/4 base)
+    declare_parameter("tilt.speed_index", 125);           // RPM (1/4 base)
+    declare_parameter("tilt.center_offset", 110000);
+
+    declare_parameter("homing_timeout", 60000);           // ms
 
     // Get parameters
     device_name_ = get_parameter("device_name").as_string();
@@ -34,9 +43,16 @@ public:
     pan_node_id_ = get_parameter("pan_node_id").as_int();
     tilt_node_id_ = get_parameter("tilt_node_id").as_int();
 
-    homing_acceleration_ = get_parameter("homing_acceleration").as_int();
-    speed_switch_ = get_parameter("speed_switch").as_int();
-    speed_index_ = get_parameter("speed_index").as_int();
+    pan_homing_acceleration_ = get_parameter("pan.homing_acceleration").as_int();
+    pan_speed_switch_ = get_parameter("pan.speed_switch").as_int();
+    pan_speed_index_ = get_parameter("pan.speed_index").as_int();
+    pan_center_offset_ = get_parameter("pan.center_offset").as_int();
+
+    tilt_homing_acceleration_ = get_parameter("tilt.homing_acceleration").as_int();
+    tilt_speed_switch_ = get_parameter("tilt.speed_switch").as_int();
+    tilt_speed_index_ = get_parameter("tilt.speed_index").as_int();
+    tilt_center_offset_ = get_parameter("tilt.center_offset").as_int();
+
     homing_timeout_ = get_parameter("homing_timeout").as_int();
 
     // Create homing service
@@ -112,11 +128,16 @@ private:
       return false;
     }
 
-    // Home pan axis
-    bool pan_success = homeAxisToCenterOfLimits(pan_controller.get(), "pan");
+    // Home pan and tilt axes simultaneously
+    auto pan_future = std::async(std::launch::async, [this, &pan_controller]() {
+      return homeAxisToCenterOfLimits(pan_controller.get(), "pan");
+    });
+    auto tilt_future = std::async(std::launch::async, [this, &tilt_controller]() {
+      return homeAxisToCenterOfLimits(tilt_controller.get(), "tilt");
+    });
 
-    // Home tilt axis
-    bool tilt_success = homeAxisToCenterOfLimits(tilt_controller.get(), "tilt");
+    bool pan_success = pan_future.get();
+    bool tilt_success = tilt_future.get();
 
     // Close controllers
     pan_controller->close();
@@ -137,12 +158,16 @@ private:
   {
     RCLCPP_INFO(get_logger(), "[%s] Starting homing to center of limits...", axis_name.c_str());
 
-    // Set homing parameters with offset to center
-    // home_offset: offset from negative limit to center position
-    const int center_offset = 1650000;
+    // Get axis-specific parameters
+    const bool is_pan = (axis_name == "pan");
+    const int accel = is_pan ? pan_homing_acceleration_ : tilt_homing_acceleration_;
+    const int spd_switch = is_pan ? pan_speed_switch_ : tilt_speed_switch_;
+    const int spd_index = is_pan ? pan_speed_index_ : tilt_speed_index_;
+    const int center_offset = is_pan ? pan_center_offset_ : tilt_center_offset_;
+
     if (!controller->setHomingParameter(
-          homing_acceleration_, speed_switch_, speed_index_,
-          center_offset,  // home_offset: negative limit will be at -40960, center at 0
+          accel, spd_switch, spd_index,
+          center_offset,  // home_offset: offset from negative limit to center
           0,              // current_threshold (not used for limit switch homing)
           0))             // home_position
     {
@@ -176,7 +201,7 @@ private:
       return false;
     }
 
-    if (!controller->setPositionProfile(speed_switch_ * 3, homing_acceleration_, homing_acceleration_)) {
+    if (!controller->setPositionProfile(spd_switch * 3, accel, accel)) {
       RCLCPP_ERROR(get_logger(), "[%s] Failed to set position profile", axis_name.c_str());
       return false;
     }
@@ -216,9 +241,14 @@ private:
   int baudrate_;
   int pan_node_id_;
   int tilt_node_id_;
-  int homing_acceleration_;
-  int speed_switch_;
-  int speed_index_;
+  int pan_homing_acceleration_;
+  int pan_speed_switch_;
+  int pan_speed_index_;
+  int pan_center_offset_;
+  int tilt_homing_acceleration_;
+  int tilt_speed_switch_;
+  int tilt_speed_index_;
+  int tilt_center_offset_;
   int homing_timeout_;
 
   // State

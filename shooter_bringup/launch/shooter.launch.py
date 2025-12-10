@@ -21,6 +21,17 @@ def generate_launch_description():
     # Get USB port from environment variable (default: USB0)
     usb_port = os.environ.get('EPOS_USB_DEVICE', 'USB0')
 
+    # Pan-Tilt homing parameters from environment
+    pan_homing_accel = int(os.environ.get('PAN_HOMING_ACCEL', '7500'))
+    pan_speed_switch = int(os.environ.get('PAN_SPEED_SWITCH', '4500'))
+    pan_speed_index = int(os.environ.get('PAN_SPEED_INDEX', '750'))
+    pan_center_offset = int(os.environ.get('PAN_CENTER_OFFSET', '1650000'))
+    tilt_homing_accel = int(os.environ.get('TILT_HOMING_ACCEL', '1250'))
+    tilt_speed_switch = int(os.environ.get('TILT_SPEED_SWITCH', '750'))
+    tilt_speed_index = int(os.environ.get('TILT_SPEED_INDEX', '125'))
+    tilt_center_offset = int(os.environ.get('TILT_CENTER_OFFSET', '110000'))
+    homing_timeout = int(os.environ.get('HOMING_TIMEOUT', '60000'))
+
     # Launch arguments
     enable_homing_arg = DeclareLaunchArgument(
         'enable_homing',
@@ -54,10 +65,15 @@ def generate_launch_description():
             'port_name': usb_port,
             'pan_node_id': 3,
             'tilt_node_id': 4,
-            'homing_acceleration': 5000,
-            'speed_switch': 3000,
-            'speed_index': 500,
-            'homing_timeout': 30000,
+            'pan.homing_acceleration': pan_homing_accel,
+            'pan.speed_switch': pan_speed_switch,
+            'pan.speed_index': pan_speed_index,
+            'pan.center_offset': pan_center_offset,
+            'tilt.homing_acceleration': tilt_homing_accel,
+            'tilt.speed_switch': tilt_speed_switch,
+            'tilt.speed_index': tilt_speed_index,
+            'tilt.center_offset': tilt_center_offset,
+            'homing_timeout': homing_timeout,
             'auto_home': True,
             'exit_after_homing': True,
         }]

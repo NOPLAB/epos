@@ -27,6 +27,17 @@ services:
       - /dev:/dev
     environment:
       - EPOS_USB_DEVICE=${EPOS_USB_DEVICE:-USB0}
+      # Pan homing parameters
+      - PAN_HOMING_ACCEL=8000
+      - PAN_SPEED_SWITCH=5000
+      - PAN_SPEED_INDEX=800
+      - PAN_CENTER_OFFSET=1650000
+      # Tilt homing parameters
+      - TILT_HOMING_ACCEL=1500
+      - TILT_SPEED_SWITCH=1000
+      - TILT_SPEED_INDEX=400
+      - TILT_CENTER_OFFSET=110000
+      - HOMING_TIMEOUT=60000
     profiles:
       - real
     command: ros2 launch shooter_bringup shooter.launch.py enable_homing:=true
@@ -52,7 +63,6 @@ services:
       - ./docker/joystick.config.yaml:/config/joystick.config.yaml:ro
     environment:
       - JOY_DEV_ID=${JOY_DEV_ID:-0}
-      - ENABLE_TILT=${ENABLE_TILT:-false}
       - PWM_CHIP=${PWM_CHIP:-2}
       - SERVO_IDLE_DEG=${SERVO_IDLE_DEG:-0}
       - SERVO_TRIGGER_DEG=${SERVO_TRIGGER_DEG:-180}
@@ -66,16 +76,16 @@ services:
       ros2 run shooter_control pan_tilt_joy_node --ros-args
       -p pan_axis:=3
       -p tilt_axis:=4
-      -p pan_scale:=0.01
-      -p tilt_scale:=0.03
-      -p enable_tilt:=$${ENABLE_TILT:-false} &
+      -p pan_velocity:=1.0
+      -p tilt_velocity:=1.0 &
       ros2 run shooter_control servo_trigger_node --ros-args
       -p pwm_chip:=$${PWM_CHIP:-2}
       -p pwm_channel:=0
       -p trigger_button:=5
       -p return_delay_ms:=300
       -p idle_angle_deg:=$${SERVO_IDLE_DEG:-0}
-      -p trigger_angle_deg:=$${SERVO_TRIGGER_DEG:-180}"
+      -p trigger_angle_deg:=$${SERVO_TRIGGER_DEG:-180} &
+      wait"
 
   body_tracker:
     image: shooter-ros-humble

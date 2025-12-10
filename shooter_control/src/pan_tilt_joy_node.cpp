@@ -14,7 +14,6 @@ public:
     declare_parameter("pan_velocity", 1.0);     // Max velocity in rad/s at full deflection
     declare_parameter("tilt_velocity", 1.0);    // Max velocity in rad/s at full deflection
     declare_parameter("deadzone", 0.1);         // Joystick deadzone
-    declare_parameter("enable_tilt", true);     // Enable tilt control
     declare_parameter("shooter_trigger_axis", 5);  // RT trigger axis
     declare_parameter("shooter_speed_rpm", 5000.0); // Shooter speed in RPM
 
@@ -24,7 +23,6 @@ public:
     pan_velocity_ = get_parameter("pan_velocity").as_double();
     tilt_velocity_ = get_parameter("tilt_velocity").as_double();
     deadzone_ = get_parameter("deadzone").as_double();
-    enable_tilt_ = get_parameter("enable_tilt").as_bool();
     shooter_trigger_axis_ = get_parameter("shooter_trigger_axis").as_int();
     shooter_speed_rpm_ = get_parameter("shooter_speed_rpm").as_double();
     // Convert RPM to rad/s for ros2_control
@@ -44,7 +42,6 @@ public:
     RCLCPP_INFO(get_logger(), "Pan-Tilt Joy Node initialized (velocity control)");
     RCLCPP_INFO(get_logger(), "  Pan axis: %d, Tilt axis: %d", pan_axis_, tilt_axis_);
     RCLCPP_INFO(get_logger(), "  Pan velocity: %.3f rad/s, Tilt velocity: %.3f rad/s", pan_velocity_, tilt_velocity_);
-    RCLCPP_INFO(get_logger(), "  Tilt enabled: %s", enable_tilt_ ? "true" : "false");
     RCLCPP_INFO(get_logger(), "  Shooter trigger axis: %d, speed: %.0f RPM", shooter_trigger_axis_, shooter_speed_rpm_);
   }
 
@@ -62,7 +59,7 @@ private:
     double pan_input = msg->axes[pan_axis_];
     double tilt_input = 0.0;
 
-    if (enable_tilt_ && static_cast<size_t>(tilt_axis_) < msg->axes.size()) {
+    if (static_cast<size_t>(tilt_axis_) < msg->axes.size()) {
       tilt_input = msg->axes[tilt_axis_];
     }
 
@@ -80,11 +77,7 @@ private:
 
     // Publish pan-tilt velocity command
     auto cmd = std_msgs::msg::Float64MultiArray();
-    if (enable_tilt_) {
-      cmd.data = {pan_vel, tilt_vel};
-    } else {
-      cmd.data = {pan_vel};
-    }
+    cmd.data = {pan_vel, tilt_vel};
     command_pub_->publish(cmd);
 
     // Handle shooter trigger (RT button)
@@ -108,7 +101,6 @@ private:
   double pan_velocity_;
   double tilt_velocity_;
   double deadzone_;
-  bool enable_tilt_;
   int shooter_trigger_axis_;
   double shooter_speed_rpm_;
   double shooter_speed_rad_s_;

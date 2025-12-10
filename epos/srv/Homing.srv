@@ -7,7 +7,7 @@ uint32 speed_index 50              # Speed for index search [rpm]
 int32 home_offset 0                # Home offset [quad counts]
 uint16 current_threshold 500       # Current threshold [mA]
 int32 home_position 0              # Home position [quad counts]
-int32 timeout_ms 30000             # Timeout [ms]
+int32 timeout_ms 60000             # Timeout [ms]
 ---
 # Response
 bool success
