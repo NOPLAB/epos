@@ -1,5 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
+#include <geometry_msgs/msg/twist.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <cv_bridge/cv_bridge.h>
@@ -26,6 +27,8 @@ public:
     declare_parameter("camera_device_id", 0);
     declare_parameter("confidence_threshold", 0.5);
     declare_parameter("nms_threshold", 0.4);
+    declare_parameter("pan_base_threshold", 0.7);   // pan角度がこの割合を超えたら台車も回転
+    declare_parameter("base_angular_gain", 0.5);    // 台車の角速度ゲイン [rad/s per rad]
 
     pan_kp_ = get_parameter("pan_kp").as_double();
     pan_ki_ = get_parameter("pan_ki").as_double();
@@ -37,6 +40,8 @@ public:
     camera_device_id_ = get_parameter("camera_device_id").as_int();
     confidence_threshold_ = get_parameter("confidence_threshold").as_double();
     nms_threshold_ = get_parameter("nms_threshold").as_double();
+    pan_base_threshold_ = get_parameter("pan_base_threshold").as_double();
+    base_angular_gain_ = get_parameter("base_angular_gain").as_double();
 
     // Load YOLO model
     std::string pkg_share = ament_index_cpp::get_package_share_directory("shooter_control");
@@ -66,6 +71,10 @@ public:
     // Publisher for pan-tilt position commands
     pan_tilt_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
       "/pan_tilt_controller/commands", 10);
+
+    // Publisher for base velocity commands
+    cmd_vel_pub_ = create_publisher<geometry_msgs::msg::Twist>(
+      "/diff_drive_controller/cmd_vel_unstamped", 10);
 
     // Subscriber for current joint state
     joint_state_sub_ = create_subscription<sensor_msgs::msg::JointState>(
@@ -273,16 +282,31 @@ private:
     }
 
     // Publish pan-tilt position command
-    auto msg = std_msgs::msg::Float64MultiArray();
-    msg.data.resize(2);
-    msg.data[0] = target_pan;
-    msg.data[1] = target_tilt;
-    pan_tilt_pub_->publish(msg);
+    auto pan_tilt_msg = std_msgs::msg::Float64MultiArray();
+    pan_tilt_msg.data.resize(2);
+    pan_tilt_msg.data[0] = target_pan;
+    pan_tilt_msg.data[1] = target_tilt;
+    pan_tilt_pub_->publish(pan_tilt_msg);
+
+    // Calculate base angular velocity when pan approaches limit
+    double base_angular_vel = 0.0;
+    double pan_ratio = std::abs(current_pan_) / pan_limit_;
+    if (pan_ratio > pan_base_threshold_ && body_detected) {
+      // pan角度が閾値を超えたら、panの符号に応じて台車を回転
+      // panが正（左向き）なら台車も左へ回転（正の角速度）
+      double excess_ratio = (pan_ratio - pan_base_threshold_) / (1.0 - pan_base_threshold_);
+      base_angular_vel = std::copysign(excess_ratio * base_angular_gain_, current_pan_);
+    }
+
+    // Publish base velocity command
+    auto cmd_vel_msg = geometry_msgs::msg::Twist();
+    cmd_vel_msg.angular.z = base_angular_vel;
+    cmd_vel_pub_->publish(cmd_vel_msg);
 
     // === Draw UI ===
     draw_ui(frame, body_detected, pan_error, tilt_error,
             pan_p_term, pan_i_term, tilt_p_term, tilt_i_term,
-            target_pan, target_tilt, indices.size());
+            target_pan, target_tilt, base_angular_vel, indices.size());
 
     cv::imshow("Body Tracker", frame);
     cv::waitKey(1);
@@ -291,7 +315,8 @@ private:
   void draw_ui(cv::Mat& frame, bool body_detected,
                double pan_error, double tilt_error,
                double pan_p, double pan_i, double tilt_p, double tilt_i,
-               double target_pan, double target_tilt, size_t num_detections)
+               double target_pan, double target_tilt,
+               double base_angular_vel, size_t num_detections)
   {
     int w = frame.cols;
     int h = frame.rows;
@@ -303,9 +328,9 @@ private:
       cv::Scalar(100, 100, 100), 1);
 
     // Status panel background
-    cv::rectangle(frame, cv::Point(10, 10), cv::Point(280, 220),
+    cv::rectangle(frame, cv::Point(10, 10), cv::Point(280, 260),
       cv::Scalar(0, 0, 0), cv::FILLED);
-    cv::rectangle(frame, cv::Point(10, 10), cv::Point(280, 220),
+    cv::rectangle(frame, cv::Point(10, 10), cv::Point(280, 260),
       cv::Scalar(100, 100, 100), 1);
 
     // Status text
@@ -348,12 +373,25 @@ private:
     cv::putText(frame, buf, cv::Point(20, 178),
       cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(255, 255, 0), 1);
 
+    // Base control info
+    cv::putText(frame, "--- BASE ---", cv::Point(20, 200),
+      cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(150, 150, 150), 1);
+
+    double pan_ratio = std::abs(current_pan_) / pan_limit_;
+    snprintf(buf, sizeof(buf), "Pan ratio: %.1f%% (thresh: %.0f%%)",
+             pan_ratio * 100, pan_base_threshold_ * 100);
+    cv::putText(frame, buf, cv::Point(20, 218),
+      cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(200, 200, 200), 1);
+
+    snprintf(buf, sizeof(buf), "Angular vel: %+.3f rad/s", base_angular_vel);
+    cv::Scalar vel_color = std::abs(base_angular_vel) > 0.01 ?
+      cv::Scalar(0, 255, 255) : cv::Scalar(200, 200, 200);
+    cv::putText(frame, buf, cv::Point(20, 236),
+      cv::FONT_HERSHEY_SIMPLEX, 0.4, vel_color, 1);
+
     // Gains
     snprintf(buf, sizeof(buf), "Pan Kp=%.4f Ki=%.5f", pan_kp_, pan_ki_);
-    cv::putText(frame, buf, cv::Point(20, 200),
-      cv::FONT_HERSHEY_SIMPLEX, 0.35, cv::Scalar(150, 150, 150), 1);
-    snprintf(buf, sizeof(buf), "Tilt Kp=%.4f Ki=%.5f", tilt_kp_, tilt_ki_);
-    cv::putText(frame, buf, cv::Point(20, 215),
+    cv::putText(frame, buf, cv::Point(20, 253),
       cv::FONT_HERSHEY_SIMPLEX, 0.35, cv::Scalar(150, 150, 150), 1);
 
     // Pan error bar (bottom of screen)
@@ -409,6 +447,7 @@ private:
 
   // ROS
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr pan_tilt_pub_;
+  rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
@@ -430,6 +469,8 @@ private:
   int camera_device_id_;
   double confidence_threshold_;
   double nms_threshold_;
+  double pan_base_threshold_;
+  double base_angular_gain_;
 
   // Current joint positions
   double current_pan_ = 0.0;
