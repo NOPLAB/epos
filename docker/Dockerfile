@@ -16,6 +16,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     cmake \
     git \
     wget \
+    curl \
     udev \
     usbutils \
     ros-humble-ros2-control \

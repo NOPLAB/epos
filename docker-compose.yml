@@ -93,18 +93,26 @@ services:
 
   body_tracker:
     image: shooter-ros-humble
-    container_name: shooter-control
+    container_name: shooter-body-tracker
     privileged: true
     volumes:
       - /dev/video0:/dev/video0
+      - /dev/input:/dev/input
       - /tmp/.X11-unix:/tmp/.X11-unix
     environment:
       - DISPLAY=${DISPLAY}
+      - JOY_DEV_ID=${JOY_DEV_ID:-0}
+      - CAMERA_DEVICE_ID=${CAMERA_DEVICE_ID:-0}
+      - TRACKING_BUTTON=${TRACKING_BUTTON:-0}
     stdin_open: true
     tty: true
     profiles:
       - body
-    command: ros2 launch shooter_control body_tracker.launch.py
+    command: >
+      bash -c "ros2 run joy joy_node --ros-args -p device_id:=$${JOY_DEV_ID:-0} &
+      ros2 launch shooter_control body_tracker.launch.py
+      camera_device_id:=$${CAMERA_DEVICE_ID:-0}
+      tracking_button_index:=$${TRACKING_BUTTON:-0}"
 
   # ============================================
   # Simulation Services (Gazebo Sim)

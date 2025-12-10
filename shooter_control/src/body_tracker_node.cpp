@@ -3,15 +3,20 @@
 #include <geometry_msgs/msg/twist.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
+#include <sensor_msgs/msg/joy.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/dnn.hpp>
+#include <opencv2/video/tracking.hpp>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <fstream>
 #include <cmath>
 
 class BodyTrackerNode : public rclcpp::Node
 {
+  // Tracking state enum (defined at class scope for early access)
+  enum class TrackingState { DETECTING, TRACKING };
+
 public:
   BodyTrackerNode() : Node("body_tracker")
   {
@@ -30,6 +35,12 @@ public:
     declare_parameter("pan_base_threshold", 0.7);   // pan角度がこの割合を超えたら台車も回転
     declare_parameter("base_angular_gain", 0.5);    // 台車の角速度ゲイン [rad/s per rad]
 
+    // Tracking parameters
+    declare_parameter("tracking_button_index", 0);       // Aボタン
+    declare_parameter("lost_threshold", 150);            // 150フレーム(約5秒)でロスト判定
+    declare_parameter("yolo_verification_interval", 30); // 30フレームごとにYOLO検証
+    declare_parameter("iou_threshold", 0.3);             // IoU閾値
+
     pan_kp_ = get_parameter("pan_kp").as_double();
     pan_ki_ = get_parameter("pan_ki").as_double();
     tilt_kp_ = get_parameter("tilt_kp").as_double();
@@ -42,6 +53,12 @@ public:
     nms_threshold_ = get_parameter("nms_threshold").as_double();
     pan_base_threshold_ = get_parameter("pan_base_threshold").as_double();
     base_angular_gain_ = get_parameter("base_angular_gain").as_double();
+
+    // Tracking parameters
+    tracking_button_index_ = get_parameter("tracking_button_index").as_int();
+    lost_threshold_ = get_parameter("lost_threshold").as_int();
+    yolo_verification_interval_ = get_parameter("yolo_verification_interval").as_int();
+    iou_threshold_ = get_parameter("iou_threshold").as_double();
 
     // Load YOLO model
     std::string pkg_share = ament_index_cpp::get_package_share_directory("shooter_control");
@@ -68,6 +85,12 @@ public:
 
     RCLCPP_INFO(get_logger(), "YOLO model loaded successfully (%zu classes)", class_names_.size());
 
+    // Setup NanoTrack model paths
+    nanotrack_backbone_path_ = pkg_share + "/models/nanotrack_backbone_sim.onnx";
+    nanotrack_head_path_ = pkg_share + "/models/nanotrack_head_sim.onnx";
+    RCLCPP_INFO(get_logger(), "NanoTrack models: backbone=%s, head=%s",
+                nanotrack_backbone_path_.c_str(), nanotrack_head_path_.c_str());
+
     // Publisher for pan-tilt position commands
     pan_tilt_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
       "/pan_tilt_controller/commands", 10);
@@ -80,6 +103,11 @@ public:
     joint_state_sub_ = create_subscription<sensor_msgs::msg::JointState>(
       "/joint_states", 10,
       std::bind(&BodyTrackerNode::joint_state_callback, this, std::placeholders::_1));
+
+    // Subscriber for joystick input
+    joy_sub_ = create_subscription<sensor_msgs::msg::Joy>(
+      "/joy", 10,
+      std::bind(&BodyTrackerNode::joy_callback, this, std::placeholders::_1));
 
     if (use_camera_device_) {
       // Use OpenCV VideoCapture directly
@@ -104,6 +132,8 @@ public:
 
     RCLCPP_INFO(get_logger(), "Body tracker node started (pan: Kp=%.4f Ki=%.5f, tilt: Kp=%.4f Ki=%.5f)",
                 pan_kp_, pan_ki_, tilt_kp_, tilt_ki_);
+    RCLCPP_INFO(get_logger(), "Tracking: button=%d, lost_threshold=%d, yolo_interval=%d",
+                tracking_button_index_, lost_threshold_, yolo_verification_interval_);
   }
 
   ~BodyTrackerNode()
@@ -123,6 +153,179 @@ private:
         current_tilt_ = msg->position[i];
       }
     }
+  }
+
+  void joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
+  {
+    if (static_cast<size_t>(tracking_button_index_) >= msg->buttons.size()) {
+      return;
+    }
+
+    bool current_button = msg->buttons[tracking_button_index_] != 0;
+
+    // Edge detection (trigger on button press)
+    if (current_button && !last_tracking_button_state_) {
+      toggle_tracking();
+    }
+
+    last_tracking_button_state_ = current_button;
+  }
+
+  void toggle_tracking()
+  {
+    if (tracking_state_ == TrackingState::DETECTING) {
+      // Request to start tracking (will be processed in next frame)
+      request_start_tracking_ = true;
+      RCLCPP_INFO(get_logger(), "Tracking start requested");
+    } else {
+      // Stop tracking
+      stop_tracking();
+      RCLCPP_INFO(get_logger(), "Tracking stopped by user");
+    }
+  }
+
+  bool start_tracking(const cv::Mat& frame, const cv::Rect& bbox)
+  {
+    try {
+      cv::TrackerNano::Params params;
+      params.backbone = nanotrack_backbone_path_;
+      params.neckhead = nanotrack_head_path_;
+
+      tracker_ = cv::TrackerNano::create(params);
+      tracker_->init(frame, bbox);
+
+      tracked_bbox_ = bbox;
+      tracker_initialized_ = true;
+      tracking_state_ = TrackingState::TRACKING;
+      tracking_lost_count_ = 0;
+      yolo_verification_counter_ = 0;
+
+      RCLCPP_INFO(get_logger(), "Started tracking: bbox=(%d,%d,%d,%d)",
+                  bbox.x, bbox.y, bbox.width, bbox.height);
+      return true;
+    } catch (const cv::Exception& e) {
+      RCLCPP_ERROR(get_logger(), "Failed to init tracker: %s", e.what());
+      return false;
+    }
+  }
+
+  void stop_tracking()
+  {
+    tracker_.release();
+    tracker_initialized_ = false;
+    tracking_state_ = TrackingState::DETECTING;
+    tracking_lost_count_ = 0;
+    yolo_verification_counter_ = 0;
+    request_start_tracking_ = false;
+
+    // Reset PI integral errors when stopping tracking
+    pan_integral_error_ = 0.0;
+    tilt_integral_error_ = 0.0;
+  }
+
+  bool update_tracker(const cv::Mat& frame)
+  {
+    if (!tracker_initialized_ || tracker_.empty()) {
+      return false;
+    }
+
+    return tracker_->update(frame, tracked_bbox_);
+  }
+
+  cv::Rect select_best_target(const std::vector<cv::Rect>& boxes,
+                              const std::vector<int>& indices,
+                              int frame_width, int frame_height)
+  {
+    // Select person closest to frame center
+    int center_x = frame_width / 2;
+    int center_y = frame_height / 2;
+
+    cv::Rect best_box;
+    double min_dist = std::numeric_limits<double>::max();
+
+    for (int idx : indices) {
+      const cv::Rect& box = boxes[idx];
+      int box_center_x = box.x + box.width / 2;
+      int box_center_y = box.y + box.height / 2;
+
+      double dist = std::hypot(box_center_x - center_x, box_center_y - center_y);
+      if (dist < min_dist) {
+        min_dist = dist;
+        best_box = box;
+      }
+    }
+
+    return best_box;
+  }
+
+  double calculate_iou(const cv::Rect& a, const cv::Rect& b)
+  {
+    int x1 = std::max(a.x, b.x);
+    int y1 = std::max(a.y, b.y);
+    int x2 = std::min(a.x + a.width, b.x + b.width);
+    int y2 = std::min(a.y + a.height, b.y + b.height);
+
+    if (x2 <= x1 || y2 <= y1) {
+      return 0.0;
+    }
+
+    double intersection = (x2 - x1) * (y2 - y1);
+    double union_area = a.area() + b.area() - intersection;
+
+    return intersection / union_area;
+  }
+
+  struct YoloResult {
+    std::vector<cv::Rect> boxes;
+    std::vector<float> confidences;
+    std::vector<int> indices;
+  };
+
+  YoloResult run_yolo_detection(const cv::Mat& frame)
+  {
+    YoloResult result;
+    int width = frame.cols;
+    int height = frame.rows;
+
+    // Create blob from image
+    cv::Mat blob;
+    cv::dnn::blobFromImage(frame, blob, 1/255.0, cv::Size(416, 416),
+                           cv::Scalar(0, 0, 0), true, false);
+    net_.setInput(blob);
+
+    // Forward pass
+    std::vector<cv::Mat> outs;
+    net_.forward(outs, output_layers_);
+
+    // Parse detections
+    for (const auto& out : outs) {
+      auto* data = (float*)out.data;
+      for (int i = 0; i < out.rows; ++i, data += out.cols) {
+        cv::Mat scores = out.row(i).colRange(5, out.cols);
+        cv::Point class_id_point;
+        double confidence;
+        cv::minMaxLoc(scores, nullptr, &confidence, nullptr, &class_id_point);
+
+        // Only detect "person" (class 0) with sufficient confidence
+        if (class_id_point.x == 0 && confidence > confidence_threshold_) {
+          int center_x = static_cast<int>(data[0] * width);
+          int center_y = static_cast<int>(data[1] * height);
+          int w = static_cast<int>(data[2] * width);
+          int h = static_cast<int>(data[3] * height);
+          int x = center_x - w / 2;
+          int y = center_y - h / 2;
+
+          result.boxes.push_back(cv::Rect(x, y, w, h));
+          result.confidences.push_back(static_cast<float>(confidence));
+        }
+      }
+    }
+
+    // Non-maximum suppression
+    cv::dnn::NMSBoxes(result.boxes, result.confidences,
+                      confidence_threshold_, nms_threshold_, result.indices);
+
+    return result;
   }
 
   void camera_callback()
@@ -151,65 +354,102 @@ private:
   {
     int width = frame.cols;
     int height = frame.rows;
+    int frame_center_x = width / 2;
+    int frame_center_y = height / 2;
 
-    // Create blob from image
-    cv::Mat blob;
-    cv::dnn::blobFromImage(frame, blob, 1/255.0, cv::Size(416, 416),
-                           cv::Scalar(0, 0, 0), true, false);
-    net_.setInput(blob);
+    cv::Rect target_box;
+    bool target_valid = false;
+    float target_confidence = 0.0;
+    YoloResult yolo_result;
+    size_t num_detections = 0;
 
-    // Forward pass
-    std::vector<cv::Mat> outs;
-    net_.forward(outs, output_layers_);
+    if (tracking_state_ == TrackingState::TRACKING) {
+      // === TRACKING MODE ===
+      bool track_success = update_tracker(frame);
 
-    // Parse detections
-    std::vector<int> class_ids;
-    std::vector<float> confidences;
-    std::vector<cv::Rect> boxes;
+      // Periodic YOLO verification
+      yolo_verification_counter_++;
+      if (yolo_verification_counter_ >= yolo_verification_interval_) {
+        yolo_verification_counter_ = 0;
 
-    for (const auto& out : outs) {
-      auto* data = (float*)out.data;
-      for (int i = 0; i < out.rows; ++i, data += out.cols) {
-        cv::Mat scores = out.row(i).colRange(5, out.cols);
-        cv::Point class_id_point;
-        double confidence;
-        cv::minMaxLoc(scores, nullptr, &confidence, nullptr, &class_id_point);
+        yolo_result = run_yolo_detection(frame);
+        num_detections = yolo_result.indices.size();
 
-        // Only detect "person" (class 0) with sufficient confidence
-        if (class_id_point.x == 0 && confidence > confidence_threshold_) {
-          int center_x = static_cast<int>(data[0] * width);
-          int center_y = static_cast<int>(data[1] * height);
-          int w = static_cast<int>(data[2] * width);
-          int h = static_cast<int>(data[3] * height);
-          int x = center_x - w / 2;
-          int y = center_y - h / 2;
+        // Find best matching YOLO detection
+        double best_iou = 0.0;
+        cv::Rect best_match;
+        for (int idx : yolo_result.indices) {
+          double iou = calculate_iou(tracked_bbox_, yolo_result.boxes[idx]);
+          if (iou > best_iou) {
+            best_iou = iou;
+            best_match = yolo_result.boxes[idx];
+          }
+        }
 
-          boxes.push_back(cv::Rect(x, y, w, h));
-          confidences.push_back(static_cast<float>(confidence));
-          class_ids.push_back(class_id_point.x);
+        // If YOLO detection matches, update tracker with corrected bbox
+        if (best_iou > iou_threshold_) {
+          // Re-initialize tracker with YOLO-corrected bbox
+          try {
+            tracker_->init(frame, best_match);
+            tracked_bbox_ = best_match;
+          } catch (const cv::Exception& e) {
+            RCLCPP_WARN(get_logger(), "Failed to reinit tracker: %s", e.what());
+          }
+        }
+      }
+
+      if (track_success) {
+        tracking_lost_count_ = 0;
+        target_box = tracked_bbox_;
+        target_valid = true;
+      } else {
+        tracking_lost_count_++;
+        if (tracking_lost_count_ >= lost_threshold_) {
+          RCLCPP_WARN(get_logger(), "Target lost, returning to detection mode");
+          stop_tracking();
+        } else {
+          // Use last known position
+          target_box = tracked_bbox_;
+          target_valid = true;
+        }
+      }
+
+    } else {
+      // === DETECTING MODE ===
+      yolo_result = run_yolo_detection(frame);
+      num_detections = yolo_result.indices.size();
+
+      if (!yolo_result.indices.empty()) {
+        if (request_start_tracking_) {
+          // Select target closest to center and start tracking
+          cv::Rect selected = select_best_target(yolo_result.boxes, yolo_result.indices, width, height);
+          if (start_tracking(frame, selected)) {
+            target_box = selected;
+            target_valid = true;
+          }
+          request_start_tracking_ = false;
+        } else {
+          // Normal detecting mode: follow most confident person
+          float best_confidence = 0.0;
+          for (int idx : yolo_result.indices) {
+            if (yolo_result.confidences[idx] > best_confidence) {
+              best_confidence = yolo_result.confidences[idx];
+              target_box = yolo_result.boxes[idx];
+              target_confidence = best_confidence;
+              target_valid = true;
+            }
+          }
+        }
+      } else {
+        // No detection and start tracking was requested
+        if (request_start_tracking_) {
+          RCLCPP_WARN(get_logger(), "No person detected, cannot start tracking");
+          request_start_tracking_ = false;
         }
       }
     }
 
-    // Non-maximum suppression
-    std::vector<int> indices;
-    cv::dnn::NMSBoxes(boxes, confidences, confidence_threshold_, nms_threshold_, indices);
-
-    int frame_center_x = width / 2;
-    int frame_center_y = height / 2;
-    bool body_detected = false;
-    float best_confidence = 0.0;
-    cv::Rect best_box;
-
-    // Find the largest/most confident person
-    for (int idx : indices) {
-      if (confidences[idx] > best_confidence) {
-        best_confidence = confidences[idx];
-        best_box = boxes[idx];
-        body_detected = true;
-      }
-    }
-
+    // === PI Control ===
     double pan_error = 0.0;
     double tilt_error = 0.0;
     double pan_p_term = 0.0, pan_i_term = 0.0;
@@ -217,15 +457,11 @@ private:
     double target_pan = current_pan_;
     double target_tilt = current_tilt_;
 
-    if (body_detected) {
-      // Calculate body center
-      int body_center_x = best_box.x + best_box.width / 2;
-      int body_center_y = best_box.y + best_box.height / 2;
+    if (target_valid) {
+      int body_center_x = target_box.x + target_box.width / 2;
+      int body_center_y = target_box.y + target_box.height / 2;
 
-      // Calculate errors (normalized to -1.0 ~ 1.0)
-      // Pan: positive error means body is to the left, need to rotate left (positive pan)
       pan_error = static_cast<double>(frame_center_x - body_center_x) / frame_center_x;
-      // Tilt: positive error means body is above center, need to tilt up (negative tilt)
       tilt_error = static_cast<double>(frame_center_y - body_center_y) / frame_center_y;
 
       // PI control for pan
@@ -242,71 +478,73 @@ private:
       tilt_integral_error_ = std::clamp(tilt_integral_error_, -tilt_max_integral, tilt_max_integral);
       tilt_p_term = tilt_kp_ * tilt_error;
       tilt_i_term = tilt_ki_ * tilt_integral_error_;
-      double tilt_delta = -(tilt_p_term + tilt_i_term);  // Negative because tilt axis is inverted
+      double tilt_delta = -(tilt_p_term + tilt_i_term);
 
-      // Calculate target positions
       target_pan = current_pan_ + pan_delta;
       target_tilt = current_tilt_ + tilt_delta;
-
-      // Clamp to limits
       target_pan = std::clamp(target_pan, -pan_limit_, pan_limit_);
       target_tilt = std::clamp(target_tilt, -tilt_limit_, tilt_limit_);
 
-      // Draw body rectangle
-      cv::rectangle(frame, best_box, cv::Scalar(0, 255, 0), 2);
+      // Draw target
+      int body_center_x_draw = target_box.x + target_box.width / 2;
+      int body_center_y_draw = target_box.y + target_box.height / 2;
 
-      // Draw confidence
-      char conf_buf[32];
-      snprintf(conf_buf, sizeof(conf_buf), "%.1f%%", best_confidence * 100);
-      cv::putText(frame, conf_buf, cv::Point(best_box.x, best_box.y - 5),
-        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
-
-      // Draw body center crosshair
-      cv::drawMarker(frame, cv::Point(body_center_x, body_center_y),
-        cv::Scalar(0, 255, 0), cv::MARKER_CROSS, 20, 2);
-
-      // Draw line from center to body
-      cv::line(frame, cv::Point(frame_center_x, frame_center_y),
-        cv::Point(body_center_x, body_center_y), cv::Scalar(255, 255, 0), 2);
-
-      // Draw all detected persons (faded)
-      for (int idx : indices) {
-        if (boxes[idx] != best_box) {
-          cv::rectangle(frame, boxes[idx], cv::Scalar(100, 100, 100), 1);
+      if (tracking_state_ == TrackingState::TRACKING) {
+        // Orange thick box for tracking mode
+        cv::rectangle(frame, target_box, cv::Scalar(0, 165, 255), 3);
+      } else {
+        // Green box for detecting mode
+        cv::rectangle(frame, target_box, cv::Scalar(0, 255, 0), 2);
+        if (target_confidence > 0) {
+          char conf_buf[32];
+          snprintf(conf_buf, sizeof(conf_buf), "%.1f%%", target_confidence * 100);
+          cv::putText(frame, conf_buf, cv::Point(target_box.x, target_box.y - 5),
+            cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 0), 1);
         }
       }
+
+      cv::drawMarker(frame, cv::Point(body_center_x_draw, body_center_y_draw),
+        cv::Scalar(0, 255, 0), cv::MARKER_CROSS, 20, 2);
+      cv::line(frame, cv::Point(frame_center_x, frame_center_y),
+        cv::Point(body_center_x_draw, body_center_y_draw), cv::Scalar(255, 255, 0), 2);
+
     } else {
-      // No body detected - slowly reset integral
       pan_integral_error_ *= 0.95;
       tilt_integral_error_ *= 0.95;
     }
 
-    // Publish pan-tilt position command
+    // Draw all detected persons in detecting mode (faded)
+    if (tracking_state_ == TrackingState::DETECTING) {
+      for (int idx : yolo_result.indices) {
+        if (yolo_result.boxes[idx] != target_box) {
+          cv::rectangle(frame, yolo_result.boxes[idx], cv::Scalar(100, 100, 100), 1);
+        }
+      }
+    }
+
+    // Publish pan-tilt command
     auto pan_tilt_msg = std_msgs::msg::Float64MultiArray();
     pan_tilt_msg.data.resize(2);
     pan_tilt_msg.data[0] = target_pan;
     pan_tilt_msg.data[1] = target_tilt;
     pan_tilt_pub_->publish(pan_tilt_msg);
 
-    // Calculate base angular velocity when pan approaches limit
+    // Calculate base angular velocity
     double base_angular_vel = 0.0;
     double pan_ratio = std::abs(current_pan_) / pan_limit_;
-    if (pan_ratio > pan_base_threshold_ && body_detected) {
-      // pan角度が閾値を超えたら、panの符号に応じて台車を回転
-      // panが正（左向き）なら台車も左へ回転（正の角速度）
+    if (pan_ratio > pan_base_threshold_ && target_valid) {
       double excess_ratio = (pan_ratio - pan_base_threshold_) / (1.0 - pan_base_threshold_);
       base_angular_vel = std::copysign(excess_ratio * base_angular_gain_, current_pan_);
     }
 
-    // Publish base velocity command
     auto cmd_vel_msg = geometry_msgs::msg::Twist();
     cmd_vel_msg.angular.z = base_angular_vel;
     cmd_vel_pub_->publish(cmd_vel_msg);
 
     // === Draw UI ===
-    draw_ui(frame, body_detected, pan_error, tilt_error,
+    draw_ui(frame, target_valid, pan_error, tilt_error,
             pan_p_term, pan_i_term, tilt_p_term, tilt_i_term,
-            target_pan, target_tilt, base_angular_vel, indices.size());
+            target_pan, target_tilt, base_angular_vel, num_detections);
 
     cv::imshow("Body Tracker", frame);
     cv::waitKey(1);
@@ -333,21 +571,47 @@ private:
     cv::rectangle(frame, cv::Point(10, 10), cv::Point(280, 260),
       cv::Scalar(100, 100, 100), 1);
 
-    // Status text
-    cv::Scalar status_color = body_detected ? cv::Scalar(0, 255, 0) : cv::Scalar(0, 0, 255);
-    std::string status_text = body_detected ? "TRACKING" : "SEARCHING";
+    // Status text - show tracking state
+    cv::Scalar status_color;
+    std::string status_text;
+    std::string mode_text;
+
+    if (tracking_state_ == TrackingState::TRACKING) {
+      status_color = cv::Scalar(0, 165, 255);  // Orange
+      status_text = "TRACKING";
+      mode_text = "NanoTrack";
+    } else if (body_detected) {
+      status_color = cv::Scalar(0, 255, 0);    // Green
+      status_text = "DETECTING";
+      mode_text = "YOLO v4-tiny";
+    } else {
+      status_color = cv::Scalar(0, 0, 255);    // Red
+      status_text = "SEARCHING";
+      mode_text = "YOLO v4-tiny";
+    }
+
     cv::putText(frame, status_text, cv::Point(20, 35),
       cv::FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2);
 
-    // Detection method
-    cv::putText(frame, "YOLO v4-tiny", cv::Point(140, 35),
+    // Detection/Tracking method
+    cv::putText(frame, mode_text, cv::Point(140, 35),
       cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(150, 150, 150), 1);
 
-    // Detection count
+    // Detection count and tracking info
     char buf[64];
-    snprintf(buf, sizeof(buf), "Persons: %zu", num_detections);
+    if (tracking_state_ == TrackingState::TRACKING) {
+      snprintf(buf, sizeof(buf), "Lost: %d/%d", tracking_lost_count_, lost_threshold_);
+    } else {
+      snprintf(buf, sizeof(buf), "Persons: %zu", num_detections);
+    }
     cv::putText(frame, buf, cv::Point(20, 55),
       cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(200, 200, 200), 1);
+
+    // Button hint (top right)
+    std::string hint = (tracking_state_ == TrackingState::DETECTING) ?
+      "[A] Start Track" : "[A] Stop Track";
+    cv::putText(frame, hint, cv::Point(w - 130, 25),
+      cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(200, 200, 200), 1);
 
     // Pan control info
     cv::putText(frame, "--- PAN ---", cv::Point(20, 80),
@@ -450,6 +714,7 @@ private:
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_sub_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
 
   // OpenCV / YOLO
@@ -457,6 +722,20 @@ private:
   std::vector<std::string> output_layers_;
   std::vector<std::string> class_names_;
   cv::VideoCapture cap_;
+
+  // NanoTrack
+  cv::Ptr<cv::TrackerNano> tracker_;
+  cv::Rect tracked_bbox_;
+  bool tracker_initialized_ = false;
+  TrackingState tracking_state_ = TrackingState::DETECTING;
+  bool request_start_tracking_ = false;
+
+  // Joystick state
+  bool last_tracking_button_state_ = false;
+
+  // Tracking lost detection
+  int tracking_lost_count_ = 0;
+  int yolo_verification_counter_ = 0;
 
   // Parameters
   double pan_kp_;
@@ -471,6 +750,14 @@ private:
   double nms_threshold_;
   double pan_base_threshold_;
   double base_angular_gain_;
+
+  // Tracking parameters
+  int tracking_button_index_;
+  int lost_threshold_;
+  int yolo_verification_interval_;
+  double iou_threshold_;
+  std::string nanotrack_backbone_path_;
+  std::string nanotrack_head_path_;
 
   // Current joint positions
   double current_pan_ = 0.0;

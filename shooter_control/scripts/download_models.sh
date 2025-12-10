@@ -33,6 +33,23 @@ else
     echo "yolo11n.pt already exists, skipping."
 fi
 
+# NanoTrack models (required for object tracking)
+if [ ! -f "nanotrack_backbone_sim.onnx" ]; then
+    echo "Downloading nanotrack_backbone_sim.onnx (286KB)..."
+    curl -L -o nanotrack_backbone_sim.onnx \
+        https://github.com/opencv/opencv_zoo/raw/main/models/object_tracking_nanotrack/nanotrack_backbone_sim.onnx
+else
+    echo "nanotrack_backbone_sim.onnx already exists, skipping."
+fi
+
+if [ ! -f "nanotrack_head_sim.onnx" ]; then
+    echo "Downloading nanotrack_head_sim.onnx (286KB)..."
+    curl -L -o nanotrack_head_sim.onnx \
+        https://github.com/opencv/opencv_zoo/raw/main/models/object_tracking_nanotrack/nanotrack_head_sim.onnx
+else
+    echo "nanotrack_head_sim.onnx already exists, skipping."
+fi
+
 echo ""
 echo "Done! Models in: $MODELS_DIR"
-ls -lh "$MODELS_DIR"/*.weights "$MODELS_DIR"/*.pt 2>/dev/null || true
+ls -lh "$MODELS_DIR"/*.weights "$MODELS_DIR"/*.pt "$MODELS_DIR"/*.onnx 2>/dev/null || true
