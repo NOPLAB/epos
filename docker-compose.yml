@@ -65,7 +65,8 @@ services:
       - ./docker/joystick.config.yaml:/config/joystick.config.yaml:ro
     environment:
       - JOY_DEV_ID=${JOY_DEV_ID:-0}
-      - PWM_CHIP=${PWM_CHIP:-2}
+      - PWM_CHIP=${PWM_CHIP:-0}
+      - PWM_CHANNEL=${PWM_CHANNEL:-0}
       - SERVO_IDLE_DEG=${SERVO_IDLE_DEG:-0.0}
       - SERVO_TRIGGER_DEG=${SERVO_TRIGGER_DEG:-180.0}
     profiles:
@@ -82,8 +83,8 @@ services:
       -p tilt_velocity:=-300.0
       -p shooter_speed_rpm:=-10000.0 &
       (ros2 run shooter_control servo_trigger_node --ros-args
-      -p pwm_chip:=$${PWM_CHIP:-2}
-      -p pwm_channel:=0
+      -p pwm_chip:=$${PWM_CHIP:-0}
+      -p pwm_channel:=$${PWM_CHANNEL:-0}
       -p trigger_button:=5
       -p return_delay_ms:=300
       -p idle_angle_deg:=$${SERVO_IDLE_DEG:-0.0}

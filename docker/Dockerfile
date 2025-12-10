@@ -25,7 +25,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ros-humble-joy \
     ros-humble-teleop-twist-joy \
     ros-humble-cv-bridge \
-    libopencv-dev
+    libopencv-dev \
+    python3-pip && \
+    pip3 install --no-cache-dir rpi-hardware-pwm
 
 # Create workspace directory
 WORKDIR /opt
