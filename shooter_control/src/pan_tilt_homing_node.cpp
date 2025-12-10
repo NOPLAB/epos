@@ -95,9 +95,9 @@ private:
       device_name_, protocol_stack_name_, interface_name_, port_name_,
       baudrate_, static_cast<unsigned short>(pan_node_id_));
 
-    // auto tilt_controller = std::make_unique<EPOSController>(
-    //   device_name_, protocol_stack_name_, interface_name_, port_name_,
-    //   baudrate_, static_cast<unsigned short>(tilt_node_id_));
+    auto tilt_controller = std::make_unique<EPOSController>(
+      device_name_, protocol_stack_name_, interface_name_, port_name_,
+      baudrate_, static_cast<unsigned short>(tilt_node_id_));
 
     // Initialize pan
     if (!pan_controller->initialize()) {
@@ -105,25 +105,24 @@ private:
       return false;
     }
 
-    // // Initialize tilt
-    // if (!tilt_controller->initialize()) {
-    //   RCLCPP_ERROR(get_logger(), "Failed to initialize tilt controller");
-    //   pan_controller->close();
-    //   return false;
-    // }
+    // Initialize tilt
+    if (!tilt_controller->initialize()) {
+      RCLCPP_ERROR(get_logger(), "Failed to initialize tilt controller");
+      pan_controller->close();
+      return false;
+    }
 
     // Home pan axis
     bool pan_success = homeAxisToCenterOfLimits(pan_controller.get(), "pan");
 
-    // // Home tilt axis
-    // bool tilt_success = homeAxisToCenterOfLimits(tilt_controller.get(), "tilt");
+    // Home tilt axis
+    bool tilt_success = homeAxisToCenterOfLimits(tilt_controller.get(), "tilt");
 
     // Close controllers
     pan_controller->close();
-    // tilt_controller->close();
+    tilt_controller->close();
 
-    // if (pan_success && tilt_success) {
-    if (pan_success) {
+    if (pan_success && tilt_success) {
       RCLCPP_INFO(get_logger(), "Homing completed successfully");
       homing_successful_ = true;
       return true;

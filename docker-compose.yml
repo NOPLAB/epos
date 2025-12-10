@@ -4,17 +4,17 @@ services:
   # ============================================
   shooter:
     build:
-      context: ..
+      context: .
       dockerfile: docker/Dockerfile
     image: shooter-ros-humble
     container_name: shooter-bringup
     privileged: true
     volumes:
       - /dev:/dev
-      - ../epos:/ros2_ws/src/epos
-      - ../shooter_description:/ros2_ws/src/shooter_description
-      - ../shooter_bringup:/ros2_ws/src/shooter_bringup
-      - ../shooter_control:/ros2_ws/src/shooter_control
+      - ./epos:/ros2_ws/src/epos
+      - ./shooter_description:/ros2_ws/src/shooter_description
+      - ./shooter_bringup:/ros2_ws/src/shooter_bringup
+      - ./shooter_control:/ros2_ws/src/shooter_control
     stdin_open: true
     tty: true
     command: bash
@@ -48,10 +48,14 @@ services:
     privileged: true
     volumes:
       - /dev/input:/dev/input
-      - ./joystick.config.yaml:/config/joystick.config.yaml:ro
+      - /sys/class/pwm:/sys/class/pwm
+      - ./docker/joystick.config.yaml:/config/joystick.config.yaml:ro
     environment:
       - JOY_DEV_ID=${JOY_DEV_ID:-0}
       - ENABLE_TILT=${ENABLE_TILT:-false}
+      - PWM_CHIP=${PWM_CHIP:-2}
+      - SERVO_IDLE_DEG=${SERVO_IDLE_DEG:-0}
+      - SERVO_TRIGGER_DEG=${SERVO_TRIGGER_DEG:-180}
     profiles:
       - joystick
     command: >
@@ -64,7 +68,14 @@ services:
       -p tilt_axis:=4
       -p pan_scale:=0.01
       -p tilt_scale:=0.03
-      -p enable_tilt:=$${ENABLE_TILT:-false}"
+      -p enable_tilt:=$${ENABLE_TILT:-false} &
+      ros2 run shooter_control servo_trigger_node --ros-args
+      -p pwm_chip:=$${PWM_CHIP:-2}
+      -p pwm_channel:=0
+      -p trigger_button:=5
+      -p return_delay_ms:=300
+      -p idle_angle_deg:=$${SERVO_IDLE_DEG:-0}
+      -p trigger_angle_deg:=$${SERVO_TRIGGER_DEG:-180}"
 
   body_tracker:
     image: shooter-ros-humble
@@ -86,13 +97,13 @@ services:
   # ============================================
   sim:
     build:
-      context: ..
+      context: .
       dockerfile: docker/Dockerfile.sim
     image: shooter-sim
     container_name: shooter-simulation
     volumes:
-      - ../shooter_description:/ros2_ws/src/shooter_description
-      - ../shooter_simulation:/ros2_ws/src/shooter_simulation
+      - ./shooter_description:/ros2_ws/src/shooter_description
+      - ./shooter_simulation:/ros2_ws/src/shooter_simulation
       - /tmp/.X11-unix:/tmp/.X11-unix
     environment:
       - DISPLAY=${DISPLAY}
@@ -105,7 +116,7 @@ services:
 
   sim-run:
     build:
-      context: ..
+      context: .
       dockerfile: docker/Dockerfile.sim
     image: shooter-sim
     container_name: shooter-simulation-run

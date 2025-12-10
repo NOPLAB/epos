@@ -42,7 +42,13 @@ ament_target_dependencies(pan_tilt_joy_node
   std_msgs
 )
 
-install(TARGETS body_tracker_node pan_tilt_homing_node pan_tilt_joy_node
+add_executable(servo_trigger_node src/servo_trigger_node.cpp)
+ament_target_dependencies(servo_trigger_node
+  rclcpp
+  sensor_msgs
+)
+
+install(TARGETS body_tracker_node pan_tilt_homing_node pan_tilt_joy_node servo_trigger_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

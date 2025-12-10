@@ -14,6 +14,6 @@ teleop_twist_joy_node:
     scale_angular_turbo:
       yaw: 200.0
 
-    enable_button: 4           # LB (通常速度)
-    enable_turbo_button: 5     # RB (LB+RBでターボ、またはRB単独でターボ)
+    enable_button: 6           # LT (通常速度)
+    enable_turbo_button: 4     # LB (ターボ)
     require_enable_button: false  # RB単独でもターボ有効

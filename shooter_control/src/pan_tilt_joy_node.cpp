@@ -1,3 +1,4 @@
+#include <cmath>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
@@ -10,44 +11,41 @@ public:
     // Declare parameters
     declare_parameter("pan_axis", 3);           // Right stick horizontal (default for many controllers)
     declare_parameter("tilt_axis", 4);          // Right stick vertical
-    declare_parameter("pan_scale", 0.1);        // Radians per update at full deflection
-    declare_parameter("tilt_scale", 0.1);       // Radians per update at full deflection
-    declare_parameter("pan_min", -1.57);        // Min pan angle (radians)
-    declare_parameter("pan_max", 1.57);         // Max pan angle (radians)
-    declare_parameter("tilt_min", -0.5);        // Min tilt angle (radians)
-    declare_parameter("tilt_max", 0.5);         // Max tilt angle (radians)
+    declare_parameter("pan_velocity", 1.0);     // Max velocity in rad/s at full deflection
+    declare_parameter("tilt_velocity", 1.0);    // Max velocity in rad/s at full deflection
     declare_parameter("deadzone", 0.1);         // Joystick deadzone
-    declare_parameter("enable_tilt", false);    // Enable tilt control (disabled by default)
+    declare_parameter("enable_tilt", true);     // Enable tilt control
+    declare_parameter("shooter_trigger_axis", 5);  // RT trigger axis
+    declare_parameter("shooter_speed_rpm", 5000.0); // Shooter speed in RPM
 
     // Get parameters
     pan_axis_ = get_parameter("pan_axis").as_int();
     tilt_axis_ = get_parameter("tilt_axis").as_int();
-    pan_scale_ = get_parameter("pan_scale").as_double();
-    tilt_scale_ = get_parameter("tilt_scale").as_double();
-    pan_min_ = get_parameter("pan_min").as_double();
-    pan_max_ = get_parameter("pan_max").as_double();
-    tilt_min_ = get_parameter("tilt_min").as_double();
-    tilt_max_ = get_parameter("tilt_max").as_double();
+    pan_velocity_ = get_parameter("pan_velocity").as_double();
+    tilt_velocity_ = get_parameter("tilt_velocity").as_double();
     deadzone_ = get_parameter("deadzone").as_double();
     enable_tilt_ = get_parameter("enable_tilt").as_bool();
+    shooter_trigger_axis_ = get_parameter("shooter_trigger_axis").as_int();
+    shooter_speed_rpm_ = get_parameter("shooter_speed_rpm").as_double();
+    // Convert RPM to rad/s for ros2_control
+    shooter_speed_rad_s_ = shooter_speed_rpm_ * 2.0 * M_PI / 60.0;
 
-    // Initialize positions to center
-    pan_position_ = 0.0;
-    tilt_position_ = 0.0;
-
-    // Create publisher
+    // Create publishers
     command_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
       "/pan_tilt_controller/commands", 10);
+    shooter_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
+      "/shooter_controller/commands", 10);
 
     // Create subscriber
     joy_sub_ = create_subscription<sensor_msgs::msg::Joy>(
       "/joy", 10,
       std::bind(&PanTiltJoyNode::joyCallback, this, std::placeholders::_1));
 
-    RCLCPP_INFO(get_logger(), "Pan-Tilt Joy Node initialized");
+    RCLCPP_INFO(get_logger(), "Pan-Tilt Joy Node initialized (velocity control)");
     RCLCPP_INFO(get_logger(), "  Pan axis: %d, Tilt axis: %d", pan_axis_, tilt_axis_);
-    RCLCPP_INFO(get_logger(), "  Pan scale: %.3f, Tilt scale: %.3f", pan_scale_, tilt_scale_);
+    RCLCPP_INFO(get_logger(), "  Pan velocity: %.3f rad/s, Tilt velocity: %.3f rad/s", pan_velocity_, tilt_velocity_);
     RCLCPP_INFO(get_logger(), "  Tilt enabled: %s", enable_tilt_ ? "true" : "false");
+    RCLCPP_INFO(get_logger(), "  Shooter trigger axis: %d, speed: %.0f RPM", shooter_trigger_axis_, shooter_speed_rpm_);
   }
 
 private:
@@ -76,42 +74,48 @@ private:
       tilt_input = 0.0;
     }
 
-    // Update positions (incremental control)
-    pan_position_ += pan_input * pan_scale_;
-    tilt_position_ += tilt_input * tilt_scale_;
+    // Calculate velocity commands
+    double pan_vel = pan_input * pan_velocity_;
+    double tilt_vel = tilt_input * tilt_velocity_;
 
-    // Clamp to limits
-    pan_position_ = std::clamp(pan_position_, pan_min_, pan_max_);
-    tilt_position_ = std::clamp(tilt_position_, tilt_min_, tilt_max_);
-
-    // Publish command
+    // Publish pan-tilt velocity command
     auto cmd = std_msgs::msg::Float64MultiArray();
     if (enable_tilt_) {
-      cmd.data = {pan_position_, tilt_position_};
+      cmd.data = {pan_vel, tilt_vel};
     } else {
-      cmd.data = {pan_position_};
+      cmd.data = {pan_vel};
     }
     command_pub_->publish(cmd);
+
+    // Handle shooter trigger (RT button)
+    // RT axis: 1.0 = not pressed, -1.0 = fully pressed
+    if (static_cast<size_t>(shooter_trigger_axis_) < msg->axes.size()) {
+      double trigger_value = msg->axes[shooter_trigger_axis_];
+      double shooter_velocity = 0.0;
+      // Trigger is pressed when value < 0.5 (axis goes from 1.0 to -1.0)
+      if (trigger_value < 0.5) {
+        shooter_velocity = shooter_speed_rad_s_;
+      }
+      auto shooter_cmd = std_msgs::msg::Float64MultiArray();
+      shooter_cmd.data = {shooter_velocity};
+      shooter_pub_->publish(shooter_cmd);
+    }
   }
 
   // Parameters
   int pan_axis_;
   int tilt_axis_;
-  double pan_scale_;
-  double tilt_scale_;
-  double pan_min_;
-  double pan_max_;
-  double tilt_min_;
-  double tilt_max_;
+  double pan_velocity_;
+  double tilt_velocity_;
   double deadzone_;
   bool enable_tilt_;
-
-  // State
-  double pan_position_;
-  double tilt_position_;
+  int shooter_trigger_axis_;
+  double shooter_speed_rpm_;
+  double shooter_speed_rad_s_;
 
   // ROS
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr command_pub_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr shooter_pub_;
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
 };
 
