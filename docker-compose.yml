@@ -112,7 +112,8 @@ services:
       bash -c "ros2 run joy joy_node --ros-args -p device_id:=$${JOY_DEV_ID:-0} &
       ros2 launch shooter_control body_tracker.launch.py
       camera_device_id:=$${CAMERA_DEVICE_ID:-0}
-      tracking_button_index:=$${TRACKING_BUTTON:-0}"
+      tracking_button_index:=$${TRACKING_BUTTON:-0}
+      show_window:=$${SHOW_WINDOW:-false}"
 
   # ============================================
   # Simulation Services (Gazebo Sim)

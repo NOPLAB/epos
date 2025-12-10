@@ -40,6 +40,7 @@ public:
     declare_parameter("lost_threshold", 150);            // 150フレーム(約5秒)でロスト判定
     declare_parameter("yolo_verification_interval", 30); // 30フレームごとにYOLO検証
     declare_parameter("iou_threshold", 0.3);             // IoU閾値
+    declare_parameter("show_window", true);              // GUIウィンドウ表示
 
     pan_kp_ = get_parameter("pan_kp").as_double();
     pan_ki_ = get_parameter("pan_ki").as_double();
@@ -59,6 +60,7 @@ public:
     lost_threshold_ = get_parameter("lost_threshold").as_int();
     yolo_verification_interval_ = get_parameter("yolo_verification_interval").as_int();
     iou_threshold_ = get_parameter("iou_threshold").as_double();
+    show_window_ = get_parameter("show_window").as_bool();
 
     // Load YOLO model
     std::string pkg_share = ament_index_cpp::get_package_share_directory("shooter_control");
@@ -542,12 +544,14 @@ private:
     cmd_vel_pub_->publish(cmd_vel_msg);
 
     // === Draw UI ===
-    draw_ui(frame, target_valid, pan_error, tilt_error,
-            pan_p_term, pan_i_term, tilt_p_term, tilt_i_term,
-            target_pan, target_tilt, base_angular_vel, num_detections);
+    if (show_window_) {
+      draw_ui(frame, target_valid, pan_error, tilt_error,
+              pan_p_term, pan_i_term, tilt_p_term, tilt_i_term,
+              target_pan, target_tilt, base_angular_vel, num_detections);
 
-    cv::imshow("Body Tracker", frame);
-    cv::waitKey(1);
+      cv::imshow("Body Tracker", frame);
+      cv::waitKey(1);
+    }
   }
 
   void draw_ui(cv::Mat& frame, bool body_detected,
@@ -756,6 +760,7 @@ private:
   int lost_threshold_;
   int yolo_verification_interval_;
   double iou_threshold_;
+  bool show_window_;
   std::string nanotrack_backbone_path_;
   std::string nanotrack_head_path_;
 

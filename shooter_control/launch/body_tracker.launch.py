@@ -75,6 +75,12 @@ def generate_launch_description():
         description='IoU threshold for YOLO verification matching'
     )
 
+    show_window_arg = DeclareLaunchArgument(
+        'show_window',
+        default_value='true',
+        description='Show GUI window (set false for headless mode)'
+    )
+
     # Body tracker node
     body_tracker_node = Node(
         package='shooter_control',
@@ -93,6 +99,7 @@ def generate_launch_description():
             'lost_threshold': LaunchConfiguration('lost_threshold'),
             'yolo_verification_interval': LaunchConfiguration('yolo_verification_interval'),
             'iou_threshold': LaunchConfiguration('iou_threshold'),
+            'show_window': LaunchConfiguration('show_window'),
         }]
     )
 
@@ -108,5 +115,6 @@ def generate_launch_description():
         lost_threshold_arg,
         yolo_verification_interval_arg,
         iou_threshold_arg,
+        show_window_arg,
         body_tracker_node,
     ])
