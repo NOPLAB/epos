@@ -80,7 +80,7 @@ services:
       -p tilt_axis:=4
       -p pan_velocity:=2000.0
       -p tilt_velocity:=-300.0
-      -p shooter_speed_rpm:=10000.0 &
+      -p shooter_speed_rpm:=-10000.0 &
       (ros2 run shooter_control servo_trigger_node --ros-args
       -p pwm_chip:=$${PWM_CHIP:-2}
       -p pwm_channel:=0
