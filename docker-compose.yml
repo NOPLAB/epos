@@ -96,8 +96,7 @@ services:
     container_name: shooter-body-tracker
     privileged: true
     volumes:
-      - /dev/video0:/dev/video0
-      - /dev/input:/dev/input
+      - /dev:/dev
       - /tmp/.X11-unix:/tmp/.X11-unix
     environment:
       - DISPLAY=${DISPLAY}
