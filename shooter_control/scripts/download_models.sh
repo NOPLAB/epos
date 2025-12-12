@@ -34,18 +34,22 @@ else
 fi
 
 # NanoTrack models (required for object tracking)
+# Use models from HonglinChu/SiamTrackers (compatible with OpenCV TrackerNano)
+# See: https://github.com/HonglinChu/SiamTrackers/tree/master/NanoTrack/models/nanotrackv2
+NANOTRACK_BASE_URL="https://github.com/HonglinChu/SiamTrackers/raw/master/NanoTrack/models/nanotrackv2"
+
 if [ ! -f "nanotrack_backbone_sim.onnx" ]; then
-    echo "Downloading nanotrack_backbone_sim.onnx (286KB)..."
+    echo "Downloading nanotrack_backbone_sim.onnx..."
     curl -L -o nanotrack_backbone_sim.onnx \
-        https://github.com/opencv/opencv_zoo/raw/main/models/object_tracking_nanotrack/nanotrack_backbone_sim.onnx
+        "${NANOTRACK_BASE_URL}/nanotrack_backbone_sim.onnx"
 else
     echo "nanotrack_backbone_sim.onnx already exists, skipping."
 fi
 
 if [ ! -f "nanotrack_head_sim.onnx" ]; then
-    echo "Downloading nanotrack_head_sim.onnx (286KB)..."
+    echo "Downloading nanotrack_head_sim.onnx..."
     curl -L -o nanotrack_head_sim.onnx \
-        https://github.com/opencv/opencv_zoo/raw/main/models/object_tracking_nanotrack/nanotrack_head_sim.onnx
+        "${NANOTRACK_BASE_URL}/nanotrack_head_sim.onnx"
 else
     echo "nanotrack_head_sim.onnx already exists, skipping."
 fi

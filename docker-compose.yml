@@ -103,6 +103,7 @@ services:
       - JOY_DEV_ID=${JOY_DEV_ID:-0}
       - CAMERA_DEVICE_ID=${CAMERA_DEVICE_ID:-0}
       - TRACKING_BUTTON=${TRACKING_BUTTON:-0}
+      - SHOW_WINDOW=${SHOW_WINDOW:-true}
     stdin_open: true
     tty: true
     profiles:
