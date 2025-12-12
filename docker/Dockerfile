@@ -25,10 +25,61 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     ros-humble-teleop-twist-keyboard \
     ros-humble-joy \
     ros-humble-teleop-twist-joy \
-    ros-humble-cv-bridge \
-    libopencv-dev \
     python3-pip && \
     pip3 install --no-cache-dir rpi-hardware-pwm
+
+# Install OpenCV build dependencies and cv_bridge dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y \
+    libgtk-3-dev \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev \
+    libv4l-dev \
+    libxvidcore-dev \
+    libx264-dev \
+    libjpeg-dev \
+    libpng-dev \
+    libtiff-dev \
+    libatlas-base-dev \
+    gfortran \
+    python3-numpy \
+    libboost-python-dev
+
+# Build OpenCV with contrib modules (for TrackerNano)
+ARG OPENCV_VERSION=4.8.0
+WORKDIR /tmp
+RUN git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv.git && \
+    git clone --depth 1 --branch ${OPENCV_VERSION} https://github.com/opencv/opencv_contrib.git && \
+    mkdir -p opencv/build && cd opencv/build && \
+    cmake -D CMAKE_BUILD_TYPE=RELEASE \
+          -D CMAKE_INSTALL_PREFIX=/usr/local \
+          -D OPENCV_EXTRA_MODULES_PATH=/tmp/opencv_contrib/modules \
+          -D BUILD_EXAMPLES=OFF \
+          -D BUILD_TESTS=OFF \
+          -D BUILD_PERF_TESTS=OFF \
+          -D BUILD_opencv_python3=OFF \
+          -D WITH_GTK=ON \
+          -D WITH_V4L=ON \
+          -D WITH_FFMPEG=ON \
+          .. && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig && \
+    rm -rf /tmp/opencv /tmp/opencv_contrib
+
+# Build cv_bridge from source to use our OpenCV
+WORKDIR /opt/cv_bridge_ws/src
+RUN git clone --depth 1 --branch humble https://github.com/ros-perception/vision_opencv.git
+WORKDIR /opt/cv_bridge_ws
+RUN . /opt/ros/humble/setup.sh && \
+    colcon build --packages-select cv_bridge --cmake-args -DOpenCV_DIR=/usr/local/lib/cmake/opencv4
+
+# Set environment for custom cv_bridge
+ENV AMENT_PREFIX_PATH=/opt/cv_bridge_ws/install/cv_bridge:$AMENT_PREFIX_PATH
+ENV CMAKE_PREFIX_PATH=/opt/cv_bridge_ws/install/cv_bridge:$CMAKE_PREFIX_PATH
+ENV LD_LIBRARY_PATH=/opt/cv_bridge_ws/install/cv_bridge/lib:/usr/local/lib:$LD_LIBRARY_PATH
 
 # Create workspace directory
 WORKDIR /opt
@@ -69,7 +120,8 @@ RUN /ros2_ws/src/shooter_control/scripts/download_models.sh
 # Build the workspace
 WORKDIR /ros2_ws
 RUN . /opt/ros/humble/setup.sh && \
-    colcon build --symlink-install
+    . /opt/cv_bridge_ws/install/setup.sh && \
+    colcon build --symlink-install --cmake-args -DOpenCV_DIR=/usr/local/lib/cmake/opencv4
 
 # Setup entrypoint
 COPY docker/docker-entrypoint.sh /docker-entrypoint.sh

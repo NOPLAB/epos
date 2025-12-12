@@ -8,6 +8,7 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/dnn.hpp>
 #include <opencv2/video/tracking.hpp>
+#include <opencv2/tracking.hpp>
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <fstream>
 #include <cmath>
