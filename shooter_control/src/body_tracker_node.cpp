@@ -170,14 +170,16 @@ private:
 
   void toggle_tracking()
   {
-    if (tracking_state_ == TrackingState::DETECTING) {
+    tracking_enabled_ = !tracking_enabled_;
+
+    if (tracking_enabled_) {
       // Request to start tracking (will be processed in next frame)
       request_start_tracking_ = true;
-      RCLCPP_INFO(get_logger(), "Tracking start requested");
+      RCLCPP_INFO(get_logger(), "Tracking ENABLED");
     } else {
-      // Stop tracking
+      // Stop tracking completely
       stop_tracking();
-      RCLCPP_INFO(get_logger(), "Tracking stopped by user");
+      RCLCPP_INFO(get_logger(), "Tracking DISABLED");
     }
   }
 
@@ -210,6 +212,7 @@ private:
     tracking_lost_count_ = 0;
     yolo_verification_counter_ = 0;
     request_start_tracking_ = false;
+    tracking_enabled_ = false;
 
     // Reset PI integral errors when stopping tracking
     pan_integral_error_ = 0.0;
@@ -406,7 +409,7 @@ private:
       }
 
     } else {
-      // === DETECTING MODE ===
+      // === DETECTING MODE (or IDLE when tracking_enabled_ == false) ===
       yolo_result = run_yolo_detection(frame);
       num_detections = yolo_result.indices.size();
 
@@ -419,18 +422,8 @@ private:
             target_valid = true;
           }
           request_start_tracking_ = false;
-        } else {
-          // Normal detecting mode: follow most confident person
-          float best_confidence = 0.0;
-          for (int idx : yolo_result.indices) {
-            if (yolo_result.confidences[idx] > best_confidence) {
-              best_confidence = yolo_result.confidences[idx];
-              target_box = yolo_result.boxes[idx];
-              target_confidence = best_confidence;
-              target_valid = true;
-            }
-          }
         }
+        // tracking_enabled_がfalseの場合は追跡しない（表示のみ）
       } else {
         // No detection and start tracking was requested
         if (request_start_tracking_) {
@@ -452,7 +445,24 @@ private:
     double pan_velocity_cmd = 0.0;
     double tilt_velocity_cmd = 0.0;
 
-    if (target_valid) {
+    if (!tracking_enabled_) {
+      // === IDLE: 正面（0, 0）に戻す ===
+      double home_gain = 0.5;  // 正面復帰の速度ゲイン
+      pan_velocity_cmd = -current_pan_ * home_gain;
+      tilt_velocity_cmd = -current_tilt_ * home_gain;
+      target_pan = 0.0;
+      target_tilt = 0.0;
+
+      // 積分誤差をリセット
+      pan_integral_error_ = 0.0;
+      tilt_integral_error_ = 0.0;
+
+      // 検出された人を灰色で表示（追跡はしない）
+      for (int idx : yolo_result.indices) {
+        cv::rectangle(frame, yolo_result.boxes[idx], cv::Scalar(100, 100, 100), 1);
+      }
+
+    } else if (target_valid) {
       int body_center_x = target_box.x + target_box.width / 2;
       int body_center_y = target_box.y + target_box.height / 2;
 
@@ -513,8 +523,8 @@ private:
       tilt_integral_error_ *= 0.95;
     }
 
-    // Draw all detected persons in detecting mode (faded)
-    if (tracking_state_ == TrackingState::DETECTING) {
+    // Draw all detected persons in detecting mode (faded) - only when tracking is enabled
+    if (tracking_enabled_ && tracking_state_ == TrackingState::DETECTING) {
       for (int idx : yolo_result.indices) {
         if (yolo_result.boxes[idx] != target_box) {
           cv::rectangle(frame, yolo_result.boxes[idx], cv::Scalar(100, 100, 100), 1);
@@ -578,10 +588,14 @@ private:
     std::string status_text;
     std::string mode_text;
 
-    if (tracking_state_ == TrackingState::TRACKING) {
+    if (!tracking_enabled_) {
+      status_color = cv::Scalar(128, 128, 128);  // Gray
+      status_text = "IDLE";
+      mode_text = "Press [A] to start";
+    } else if (tracking_state_ == TrackingState::TRACKING) {
       status_color = cv::Scalar(0, 165, 255);  // Orange
       status_text = "TRACKING";
-      mode_text = "NanoTrack";
+      mode_text = "CSRT";
     } else if (body_detected) {
       status_color = cv::Scalar(0, 255, 0);    // Green
       status_text = "DETECTING";
@@ -610,10 +624,10 @@ private:
       cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(200, 200, 200), 1);
 
     // Button hint (top right)
-    std::string hint = (tracking_state_ == TrackingState::DETECTING) ?
-      "[A] Start Track" : "[A] Stop Track";
-    cv::putText(frame, hint, cv::Point(w - 130, 25),
-      cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(200, 200, 200), 1);
+    std::string hint = tracking_enabled_ ? "[A] STOP" : "[A] START";
+    cv::Scalar hint_color = tracking_enabled_ ? cv::Scalar(0, 100, 255) : cv::Scalar(0, 255, 0);
+    cv::putText(frame, hint, cv::Point(w - 100, 25),
+      cv::FONT_HERSHEY_SIMPLEX, 0.5, hint_color, 2);
 
     // Pan control info
     cv::putText(frame, "--- PAN ---", cv::Point(20, 80),
@@ -734,6 +748,7 @@ private:
 
   // Joystick state
   bool last_tracking_button_state_ = false;
+  bool tracking_enabled_ = false;  // Aボタンで追跡ON/OFF
 
   // Tracking lost detection
   int tracking_lost_count_ = 0;
