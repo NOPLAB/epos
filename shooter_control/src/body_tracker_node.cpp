@@ -12,6 +12,10 @@
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <fstream>
 #include <cmath>
+#include <thread>
+#include <mutex>
+#include <atomic>
+#include <condition_variable>
 
 class BodyTrackerNode : public rclcpp::Node
 {
@@ -133,10 +137,22 @@ public:
                 pan_kp_, pan_ki_, tilt_kp_, tilt_ki_);
     RCLCPP_INFO(get_logger(), "Tracking: button=%d, lost_threshold=%d, yolo_interval=%d",
                 tracking_button_index_, lost_threshold_, yolo_verification_interval_);
+
+    // Start YOLO thread
+    yolo_thread_running_ = true;
+    yolo_thread_ = std::thread(&BodyTrackerNode::yolo_thread_func, this);
+    RCLCPP_INFO(get_logger(), "Async YOLO detection thread started");
   }
 
   ~BodyTrackerNode()
   {
+    // Signal YOLO thread to stop
+    yolo_thread_running_ = false;
+    yolo_cv_.notify_all();
+    if (yolo_thread_.joinable()) {
+      yolo_thread_.join();
+    }
+
     if (cap_.isOpened()) {
       cap_.release();
     }
@@ -330,6 +346,60 @@ private:
     return result;
   }
 
+  // Async YOLO thread function
+  void yolo_thread_func()
+  {
+    while (yolo_thread_running_) {
+      cv::Mat frame_to_process;
+
+      // Wait for a frame to process
+      {
+        std::unique_lock<std::mutex> lock(yolo_mutex_);
+        yolo_cv_.wait(lock, [this] {
+          return !yolo_thread_running_ || yolo_request_pending_;
+        });
+
+        if (!yolo_thread_running_) {
+          break;
+        }
+
+        frame_to_process = yolo_frame_.clone();
+        yolo_request_pending_ = false;
+      }
+
+      // Run YOLO detection (blocking but in separate thread)
+      YoloResult result = run_yolo_detection(frame_to_process);
+
+      // Store results
+      {
+        std::lock_guard<std::mutex> lock(yolo_result_mutex_);
+        yolo_async_result_ = result;
+        yolo_result_ready_ = true;
+      }
+    }
+  }
+
+  // Request async YOLO detection
+  void request_async_yolo(const cv::Mat& frame)
+  {
+    std::lock_guard<std::mutex> lock(yolo_mutex_);
+    yolo_frame_ = frame.clone();
+    yolo_request_pending_ = true;
+    yolo_cv_.notify_one();
+  }
+
+  // Check if async YOLO result is ready and retrieve it
+  bool get_async_yolo_result(YoloResult& result)
+  {
+    std::lock_guard<std::mutex> lock(yolo_result_mutex_);
+    if (yolo_result_ready_) {
+      result = yolo_async_result_;
+      yolo_result_ready_ = false;
+      return true;
+    }
+    return false;
+  }
+
   void camera_callback()
   {
     cv::Mat frame;
@@ -367,22 +437,29 @@ private:
 
     if (tracking_state_ == TrackingState::TRACKING) {
       // === TRACKING MODE ===
+      // KCF is executed every frame (fast)
       bool track_success = update_tracker(frame);
+
+      // Request async YOLO verification periodically (non-blocking)
       yolo_verification_counter_++;
       if (yolo_verification_counter_ >= yolo_verification_interval_) {
         yolo_verification_counter_ = 0;
+        request_async_yolo(frame);
+      }
 
-        yolo_result = run_yolo_detection(frame);
-        num_detections = yolo_result.indices.size();
+      // Check if async YOLO result is ready (non-blocking)
+      YoloResult async_result;
+      if (get_async_yolo_result(async_result)) {
+        num_detections = async_result.indices.size();
 
         // Find best matching YOLO detection
         double best_iou = 0.0;
         cv::Rect best_match;
-        for (int idx : yolo_result.indices) {
-          double iou = calculate_iou(tracked_bbox_, yolo_result.boxes[idx]);
+        for (int idx : async_result.indices) {
+          double iou = calculate_iou(tracked_bbox_, async_result.boxes[idx]);
           if (iou > best_iou) {
             best_iou = iou;
-            best_match = yolo_result.boxes[idx];
+            best_match = async_result.boxes[idx];
           }
         }
 
@@ -392,12 +469,14 @@ private:
             tracker_ = cv::TrackerKCF::create();
             tracker_->init(frame, best_match);
             tracked_bbox_ = best_match;
+            RCLCPP_DEBUG(get_logger(), "Tracker corrected by YOLO (IoU=%.2f)", best_iou);
           } catch (const cv::Exception& e) {
             RCLCPP_WARN(get_logger(), "Failed to reinit tracker: %s", e.what());
           }
         }
       }
 
+      // Always use KCF result for control (not waiting for YOLO)
       if (track_success) {
         tracking_lost_count_ = 0;
         target_box = tracked_bbox_;
@@ -802,6 +881,19 @@ private:
   // Velocity feedforward state (previous frame target position)
   int prev_body_center_x_ = -1;
   int prev_body_center_y_ = -1;
+
+  // Async YOLO thread
+  std::thread yolo_thread_;
+  std::atomic<bool> yolo_thread_running_{false};
+  std::mutex yolo_mutex_;
+  std::condition_variable yolo_cv_;
+  cv::Mat yolo_frame_;
+  bool yolo_request_pending_ = false;
+
+  // Async YOLO results
+  std::mutex yolo_result_mutex_;
+  YoloResult yolo_async_result_;
+  bool yolo_result_ready_ = false;
 };
 
 int main(int argc, char** argv)
