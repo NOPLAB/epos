@@ -49,7 +49,6 @@ public:
     declare_parameter("show_window", true);              // GUIウィンドウ表示
 
     // Model parameters
-    declare_parameter("model_type", "mobilenet-ssd");    // "yolo" or "mobilenet-ssd"
     declare_parameter("detection_skip_frames", 3);       // DETECTINGモードでのフレームスキップ数
 
     pan_kp_ = get_parameter("pan_kp").as_double();
@@ -74,53 +73,20 @@ public:
     show_window_ = get_parameter("show_window").as_bool();
 
     // Model parameters
-    model_type_ = get_parameter("model_type").as_string();
     detection_skip_frames_ = get_parameter("detection_skip_frames").as_int();
 
-    // Load detection model
+    // Load MobileNet-SSD model
     std::string pkg_share = ament_index_cpp::get_package_share_directory("shooter_control");
+    std::string prototxt_path = pkg_share + "/models/MobileNetSSD_deploy.prototxt";
+    std::string caffemodel_path = pkg_share + "/models/MobileNetSSD_deploy.caffemodel";
 
-    if (model_type_ == "mobilenet-ssd") {
-      // Load MobileNet-SSD model
-      std::string prototxt_path = pkg_share + "/models/MobileNetSSD_deploy.prototxt";
-      std::string caffemodel_path = pkg_share + "/models/MobileNetSSD_deploy.caffemodel";
+    RCLCPP_INFO(get_logger(), "Loading MobileNet-SSD model from: %s", pkg_share.c_str());
 
-      RCLCPP_INFO(get_logger(), "Loading MobileNet-SSD model from: %s", pkg_share.c_str());
+    net_ = cv::dnn::readNetFromCaffe(prototxt_path, caffemodel_path);
+    net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
+    net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
 
-      net_ = cv::dnn::readNetFromCaffe(prototxt_path, caffemodel_path);
-      net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
-      net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
-
-      // MobileNet-SSD VOC classes (person is index 15)
-      ssd_person_class_id_ = 15;
-
-      RCLCPP_INFO(get_logger(), "MobileNet-SSD model loaded successfully");
-
-    } else {
-      // Load YOLO model (default)
-      std::string cfg_path = pkg_share + "/models/yolov4-tiny.cfg";
-      std::string weights_path = pkg_share + "/models/yolov4-tiny.weights";
-      std::string names_path = pkg_share + "/models/coco.names";
-
-      RCLCPP_INFO(get_logger(), "Loading YOLO model from: %s", pkg_share.c_str());
-
-      // Load class names
-      std::ifstream ifs(names_path);
-      std::string line;
-      while (std::getline(ifs, line)) {
-        class_names_.push_back(line);
-      }
-
-      // Load network
-      net_ = cv::dnn::readNetFromDarknet(cfg_path, weights_path);
-      net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
-      net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
-
-      // Get output layer names
-      output_layers_ = net_.getUnconnectedOutLayersNames();
-
-      RCLCPP_INFO(get_logger(), "YOLO model loaded successfully (%zu classes)", class_names_.size());
-    }
+    RCLCPP_INFO(get_logger(), "MobileNet-SSD model loaded successfully");
 
     // Publisher for pan-tilt velocity commands (rad/s)
     pan_tilt_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
@@ -237,20 +203,54 @@ private:
     return cv::TrackerKCF::create(params);
   }
 
+  // KCF用にフレームをリサイズ（高速化のため）
+  cv::Mat resize_for_kcf(const cv::Mat& frame)
+  {
+    cv::Mat resized;
+    cv::resize(frame, resized, cv::Size(), kcf_scale_, kcf_scale_, cv::INTER_LINEAR);
+    return resized;
+  }
+
+  // bboxをKCFスケールに変換
+  cv::Rect scale_bbox_for_kcf(const cv::Rect& bbox)
+  {
+    return cv::Rect(
+      static_cast<int>(bbox.x * kcf_scale_),
+      static_cast<int>(bbox.y * kcf_scale_),
+      static_cast<int>(bbox.width * kcf_scale_),
+      static_cast<int>(bbox.height * kcf_scale_)
+    );
+  }
+
+  // bboxを元のスケールに戻す
+  cv::Rect scale_bbox_from_kcf(const cv::Rect& bbox)
+  {
+    return cv::Rect(
+      static_cast<int>(bbox.x / kcf_scale_),
+      static_cast<int>(bbox.y / kcf_scale_),
+      static_cast<int>(bbox.width / kcf_scale_),
+      static_cast<int>(bbox.height / kcf_scale_)
+    );
+  }
+
   bool start_tracking(const cv::Mat& frame, const cv::Rect& bbox)
   {
     try {
       tracker_ = create_kcf_tracker();
-      tracker_->init(frame, bbox);
 
-      tracked_bbox_ = bbox;
+      // KCF用にリサイズしたフレームとbboxで初期化
+      cv::Mat kcf_frame = resize_for_kcf(frame);
+      cv::Rect kcf_bbox = scale_bbox_for_kcf(bbox);
+      tracker_->init(kcf_frame, kcf_bbox);
+
+      tracked_bbox_ = bbox;  // 元のスケールで保存
       tracker_initialized_ = true;
       tracking_state_ = TrackingState::TRACKING;
       tracking_lost_count_ = 0;
       yolo_verification_counter_ = 0;
 
-      RCLCPP_INFO(get_logger(), "Started tracking: bbox=(%d,%d,%d,%d)",
-                  bbox.x, bbox.y, bbox.width, bbox.height);
+      RCLCPP_INFO(get_logger(), "Started tracking: bbox=(%d,%d,%d,%d) kcf_scale=%.2f",
+                  bbox.x, bbox.y, bbox.width, bbox.height, kcf_scale_);
       return true;
     } catch (const cv::Exception& e) {
       RCLCPP_ERROR(get_logger(), "Failed to init tracker: %s", e.what());
@@ -284,7 +284,18 @@ private:
       return false;
     }
 
-    return tracker_->update(frame, tracked_bbox_);
+    // KCF用にリサイズしたフレームで更新
+    cv::Mat kcf_frame = resize_for_kcf(frame);
+    cv::Rect kcf_bbox = scale_bbox_for_kcf(tracked_bbox_);
+
+    bool success = tracker_->update(kcf_frame, kcf_bbox);
+
+    if (success) {
+      // 結果を元のスケールに戻す
+      tracked_bbox_ = scale_bbox_from_kcf(kcf_bbox);
+    }
+
+    return success;
   }
 
   cv::Rect select_best_target(const std::vector<cv::Rect>& boxes,
@@ -330,63 +341,16 @@ private:
     return intersection / union_area;
   }
 
-  struct YoloResult {
+  struct DetectionResult {
     std::vector<cv::Rect> boxes;
     std::vector<float> confidences;
     std::vector<int> indices;
   };
 
-  YoloResult run_yolo_detection(const cv::Mat& frame)
+  // MobileNet-SSD detection
+  DetectionResult run_detection(const cv::Mat& frame)
   {
-    YoloResult result;
-    int width = frame.cols;
-    int height = frame.rows;
-
-    // Create blob from image
-    cv::Mat blob;
-    cv::dnn::blobFromImage(frame, blob, 1/255.0, cv::Size(192, 192),
-                           cv::Scalar(0, 0, 0), true, false);
-    net_.setInput(blob);
-
-    // Forward pass
-    std::vector<cv::Mat> outs;
-    net_.forward(outs, output_layers_);
-
-    // Parse detections
-    for (const auto& out : outs) {
-      auto* data = (float*)out.data;
-      for (int i = 0; i < out.rows; ++i, data += out.cols) {
-        cv::Mat scores = out.row(i).colRange(5, out.cols);
-        cv::Point class_id_point;
-        double confidence;
-        cv::minMaxLoc(scores, nullptr, &confidence, nullptr, &class_id_point);
-
-        // Only detect "person" (class 0) with sufficient confidence
-        if (class_id_point.x == 0 && confidence > confidence_threshold_) {
-          int center_x = static_cast<int>(data[0] * width);
-          int center_y = static_cast<int>(data[1] * height);
-          int w = static_cast<int>(data[2] * width);
-          int h = static_cast<int>(data[3] * height);
-          int x = center_x - w / 2;
-          int y = center_y - h / 2;
-
-          result.boxes.push_back(cv::Rect(x, y, w, h));
-          result.confidences.push_back(static_cast<float>(confidence));
-        }
-      }
-    }
-
-    // Non-maximum suppression
-    cv::dnn::NMSBoxes(result.boxes, result.confidences,
-                      confidence_threshold_, nms_threshold_, result.indices);
-
-    return result;
-  }
-
-  // MobileNet-SSD detection (faster than YOLO)
-  YoloResult run_ssd_detection(const cv::Mat& frame)
-  {
-    YoloResult result;
+    DetectionResult result;
     int width = frame.cols;
     int height = frame.rows;
 
@@ -437,16 +401,6 @@ private:
     return result;
   }
 
-  // Generic detection function that switches between models
-  YoloResult run_detection(const cv::Mat& frame)
-  {
-    if (model_type_ == "mobilenet-ssd") {
-      return run_ssd_detection(frame);
-    } else {
-      return run_yolo_detection(frame);
-    }
-  }
-
   // Async detection thread function
   void yolo_thread_func()
   {
@@ -469,7 +423,7 @@ private:
       }
 
       // Run detection (blocking but in separate thread)
-      YoloResult result = run_detection(frame_to_process);
+      DetectionResult result = run_detection(frame_to_process);
 
       // Store results
       {
@@ -490,7 +444,7 @@ private:
   }
 
   // Check if async YOLO result is ready and retrieve it
-  bool get_async_yolo_result(YoloResult& result)
+  bool get_async_yolo_result(DetectionResult& result)
   {
     std::lock_guard<std::mutex> lock(yolo_result_mutex_);
     if (yolo_result_ready_) {
@@ -533,7 +487,7 @@ private:
     cv::Rect target_box;
     bool target_valid = false;
     float target_confidence = 0.0;
-    YoloResult yolo_result;
+    DetectionResult yolo_result;
     size_t num_detections = 0;
 
     if (tracking_state_ == TrackingState::TRACKING) {
@@ -549,7 +503,7 @@ private:
       }
 
       // Check if async YOLO result is ready (non-blocking)
-      YoloResult async_result;
+      DetectionResult async_result;
       if (get_async_yolo_result(async_result)) {
         num_detections = async_result.indices.size();
 
@@ -568,8 +522,11 @@ private:
         if (best_iou > iou_threshold_) {
           try {
             tracker_ = create_kcf_tracker();
-            tracker_->init(frame, best_match);
-            tracked_bbox_ = best_match;
+            // KCF用にリサイズしたフレームとbboxで初期化
+            cv::Mat kcf_frame = resize_for_kcf(frame);
+            cv::Rect kcf_bbox = scale_bbox_for_kcf(best_match);
+            tracker_->init(kcf_frame, kcf_bbox);
+            tracked_bbox_ = best_match;  // 元のスケールで保存
             RCLCPP_DEBUG(get_logger(), "Tracker corrected by YOLO (IoU=%.2f)", best_iou);
           } catch (const cv::Exception& e) {
             RCLCPP_WARN(get_logger(), "Failed to reinit tracker: %s", e.what());
@@ -610,7 +567,7 @@ private:
       }
 
       // 非同期YOLO結果を確認（ノンブロッキング）
-      YoloResult async_result;
+      DetectionResult async_result;
       if (get_async_yolo_result(async_result)) {
         detection_in_progress_ = false;  // 次のリクエストを許可
         yolo_result = async_result;
@@ -953,10 +910,8 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::Joy>::SharedPtr joy_sub_;
   rclcpp::TimerBase::SharedPtr timer_;
 
-  // OpenCV / YOLO
+  // OpenCV / MobileNet-SSD
   cv::dnn::Net net_;
-  std::vector<std::string> output_layers_;
-  std::vector<std::string> class_names_;
   cv::VideoCapture cap_;
 
   // Tracker
@@ -1000,10 +955,10 @@ private:
   bool show_window_;
 
   // Model parameters
-  std::string model_type_;
   int detection_skip_frames_;
   int ssd_person_class_id_ = 15;  // person class in VOC dataset
   int detection_frame_counter_ = 0;
+  double kcf_scale_ = 0.5;  // KCFトラッカー用のスケール（0.5 = 160x120）
 
   // Current joint positions
   double current_pan_ = 0.0;
@@ -1027,7 +982,7 @@ private:
 
   // Async YOLO results
   std::mutex yolo_result_mutex_;
-  YoloResult yolo_async_result_;
+  DetectionResult yolo_async_result_;
   bool yolo_result_ready_ = false;
 };
 
