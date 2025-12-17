@@ -40,7 +40,7 @@ public:
     // Tracking parameters
     declare_parameter("tracking_button_index", 0);       // Aボタン
     declare_parameter("lost_threshold", 150);            // 150フレーム(約5秒)でロスト判定
-    declare_parameter("yolo_verification_interval", 3);  // 3フレームごとにYOLO検証（約10FPS@30fps）
+    declare_parameter("yolo_verification_interval", 30); // 30フレームごとにYOLO検証（約1秒@30fps）
     declare_parameter("iou_threshold", 0.3);             // IoU閾値
     declare_parameter("show_window", true);              // GUIウィンドウ表示
 
@@ -414,8 +414,8 @@ private:
         }
       }
 
-    } else {
-      // === DETECTING MODE (or IDLE when tracking_enabled_ == false) ===
+    } else if (tracking_enabled_ || request_start_tracking_) {
+      // === DETECTING MODE (トラッキング有効時のみYOLO検出) ===
       yolo_result = run_yolo_detection(frame);
       num_detections = yolo_result.indices.size();
 
@@ -429,7 +429,6 @@ private:
           }
           request_start_tracking_ = false;
         }
-        // tracking_enabled_がfalseの場合は追跡しない（表示のみ）
       } else {
         // No detection and start tracking was requested
         if (request_start_tracking_) {
@@ -438,6 +437,7 @@ private:
         }
       }
     }
+    // === IDLE MODE: tracking_enabled_==false の場合はYOLO検出をスキップ ===
 
     // === PI Control ===
     double pan_error = 0.0;
@@ -452,42 +452,16 @@ private:
     double tilt_velocity_cmd = 0.0;
 
     if (!tracking_enabled_) {
-      // === IDLE: 正面（0, 0）に戻す ===
-      double home_gain = 0.5;  // 正面復帰の速度ゲイン
-      double max_velocity = 0.5;  // 最大速度制限 [rad/s]
-      double deadband = 0.02;  // 停止デッドバンド [rad]
+      // === IDLE: 完全停止（YOLO検出もスキップ済み） ===
+      pan_velocity_cmd = 0.0;
+      tilt_velocity_cmd = 0.0;
 
-      // ホームポジションをリミット内にクランプ
-      double home_pan = std::clamp(0.0, -pan_limit_, pan_limit_);
-      double home_tilt = std::clamp(0.0, -tilt_limit_, tilt_limit_);
-
-      double pan_diff = home_pan - current_pan_;
-      double tilt_diff = home_tilt - current_tilt_;
-
-      // デッドバンド内なら停止
-      if (std::abs(pan_diff) < deadband) {
-        pan_velocity_cmd = 0.0;
-      } else {
-        pan_velocity_cmd = std::clamp(pan_diff * home_gain, -max_velocity, max_velocity);
-      }
-
-      if (std::abs(tilt_diff) < deadband) {
-        tilt_velocity_cmd = 0.0;
-      } else {
-        tilt_velocity_cmd = std::clamp(tilt_diff * home_gain, -max_velocity, max_velocity);
-      }
-
-      target_pan = home_pan;
-      target_tilt = home_tilt;
+      target_pan = current_pan_;
+      target_tilt = current_tilt_;
 
       // 積分誤差をリセット
       pan_integral_error_ = 0.0;
       tilt_integral_error_ = 0.0;
-
-      // 検出された人を灰色で表示（追跡はしない）
-      for (int idx : yolo_result.indices) {
-        cv::rectangle(frame, yolo_result.boxes[idx], cv::Scalar(100, 100, 100), 1);
-      }
 
     } else if (target_valid) {
       int body_center_x = target_box.x + target_box.width / 2;
