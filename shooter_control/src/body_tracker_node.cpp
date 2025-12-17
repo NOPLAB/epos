@@ -366,15 +366,9 @@ private:
     YoloResult yolo_result;
     size_t num_detections = 0;
 
-    // Periodic status logging for headless mode
-    frame_count_++;
-    bool should_log = (frame_count_ % log_interval_ == 0);
-
     if (tracking_state_ == TrackingState::TRACKING) {
       // === TRACKING MODE ===
       bool track_success = update_tracker(frame);
-
-      // Periodic YOLO verification
       yolo_verification_counter_++;
       if (yolo_verification_counter_ >= yolo_verification_interval_) {
         yolo_verification_counter_ = 0;
