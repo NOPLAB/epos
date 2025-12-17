@@ -23,6 +23,7 @@ ament_target_dependencies(body_tracker_node
   geometry_msgs
   sensor_msgs
   std_msgs
+  std_srvs
   cv_bridge
 )
 target_include_directories(body_tracker_node PRIVATE ${OpenCV_INCLUDE_DIRS})

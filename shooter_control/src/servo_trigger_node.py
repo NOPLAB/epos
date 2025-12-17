@@ -2,6 +2,7 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Joy
+from std_srvs.srv import Trigger
 from rpi_hardware_pwm import HardwarePWM
 
 
@@ -37,6 +38,10 @@ class ServoTriggerNode(Node):
         self.joy_sub = self.create_subscription(
             Joy, '/joy', self.joy_callback, 10)
 
+        # Service for external trigger
+        self.trigger_srv = self.create_service(
+            Trigger, '~/trigger', self.trigger_callback)
+
         self.get_logger().info('Servo Trigger Node initialized')
         self.get_logger().info(f'  PWM: chip={self.pwm_chip}, channel={self.pwm_channel}')
         self.get_logger().info(f'  Trigger button: {self.trigger_button}')
@@ -60,6 +65,13 @@ class ServoTriggerNode(Node):
             self.trigger_servo()
 
         self.prev_button_state = button_pressed
+
+    def trigger_callback(self, request, response):
+        """Service callback for external trigger"""
+        self.trigger_servo()
+        response.success = True
+        response.message = 'Servo triggered'
+        return response
 
     def trigger_servo(self):
         # Cancel pending timer

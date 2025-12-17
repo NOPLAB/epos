@@ -1,5 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
+#include <std_srvs/srv/trigger.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
@@ -16,6 +17,7 @@
 #include <mutex>
 #include <atomic>
 #include <condition_variable>
+#include <chrono>
 
 class BodyTrackerNode : public rclcpp::Node
 {
@@ -24,6 +26,9 @@ class BodyTrackerNode : public rclcpp::Node
 
   // Scan direction enum
   enum class ScanDirection { RIGHT, LEFT };
+
+  // Firing state enum for auto-fire sequence
+  enum class FiringState { IDLE, SPINUP, FIRING, COOLDOWN };
 
 public:
   BodyTrackerNode() : Node("body_tracker")
@@ -65,6 +70,15 @@ public:
     declare_parameter("scan_tilt_max", 0.3);             // チルト最大角度 (rad)
     declare_parameter("scan_tilt_step", 0.3);            // チルトステップ (rad)
 
+    // Auto-fire parameters
+    declare_parameter("auto_fire_enabled", false);       // 自動射撃を有効化
+    declare_parameter("auto_fire_threshold", 0.7);       // 射撃しきい値（認識信頼度）
+    declare_parameter("auto_fire_cooldown_ms", 2000);    // 射撃クールダウン (ms)
+    declare_parameter("auto_fire_center_tolerance", 0.15); // 中央許容範囲（正規化）
+    declare_parameter("shooter_speed_rpm", 10000.0);     // シューター速度 (RPM)
+    declare_parameter("shooter_spinup_ms", 500);         // スピンアップ時間 (ms)
+    declare_parameter("shooter_fire_duration_ms", 300);  // 発射時間 (ms)
+
     pan_kp_ = get_parameter("pan_kp").as_double();
     pan_ki_ = get_parameter("pan_ki").as_double();
     tilt_kp_ = get_parameter("tilt_kp").as_double();
@@ -100,6 +114,17 @@ public:
     scan_tilt_max_ = get_parameter("scan_tilt_max").as_double();
     scan_tilt_step_ = get_parameter("scan_tilt_step").as_double();
 
+    // Auto-fire parameters
+    auto_fire_enabled_ = get_parameter("auto_fire_enabled").as_bool();
+    auto_fire_threshold_ = get_parameter("auto_fire_threshold").as_double();
+    auto_fire_cooldown_ms_ = get_parameter("auto_fire_cooldown_ms").as_int();
+    auto_fire_center_tolerance_ = get_parameter("auto_fire_center_tolerance").as_double();
+    shooter_speed_rpm_ = get_parameter("shooter_speed_rpm").as_double();
+    shooter_spinup_ms_ = get_parameter("shooter_spinup_ms").as_int();
+    shooter_fire_duration_ms_ = get_parameter("shooter_fire_duration_ms").as_int();
+    // Convert RPM to rad/s for ros2_control
+    shooter_speed_rad_s_ = shooter_speed_rpm_ * 2.0 * M_PI / 60.0;
+
     // Load MobileNet-SSD model
     std::string pkg_share = ament_index_cpp::get_package_share_directory("shooter_control");
     std::string prototxt_path = pkg_share + "/models/MobileNetSSD_deploy.prototxt";
@@ -121,6 +146,10 @@ public:
     cmd_vel_pub_ = create_publisher<geometry_msgs::msg::Twist>(
       "/diff_drive_controller/cmd_vel_unstamped", 10);
 
+    // Publisher for shooter motor commands
+    shooter_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
+      "/shooter_controller/commands", 10);
+
     // Subscriber for current joint state
     joint_state_sub_ = create_subscription<sensor_msgs::msg::JointState>(
       "/joint_states", 10,
@@ -130,6 +159,13 @@ public:
     joy_sub_ = create_subscription<sensor_msgs::msg::Joy>(
       "/joy", 10,
       std::bind(&BodyTrackerNode::joy_callback, this, std::placeholders::_1));
+
+    // Service client for trigger (auto-fire)
+    if (auto_fire_enabled_) {
+      trigger_client_ = create_client<std_srvs::srv::Trigger>("/servo_trigger_node/trigger");
+      RCLCPP_INFO(get_logger(), "Auto-fire enabled: threshold=%.2f, cooldown=%dms, center_tol=%.2f",
+                  auto_fire_threshold_, auto_fire_cooldown_ms_, auto_fire_center_tolerance_);
+    }
 
     if (use_camera_device_) {
       // Use OpenCV VideoCapture directly
@@ -355,6 +391,101 @@ private:
     tilt_vel = std::clamp(tilt_error * 2.0, -scan_tilt_velocity_, scan_tilt_velocity_);
   }
 
+  // シューターモーターを制御
+  void set_shooter_velocity(double velocity_rad_s)
+  {
+    auto msg = std_msgs::msg::Float64MultiArray();
+    msg.data = {velocity_rad_s};
+    shooter_pub_->publish(msg);
+  }
+
+  // 射撃シーケンス状態マシンを更新
+  void update_firing_sequence()
+  {
+    if (!auto_fire_enabled_) {
+      return;
+    }
+
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - firing_state_start_time_);
+
+    switch (firing_state_) {
+      case FiringState::IDLE:
+        // IDLEでは何もしない（try_auto_fireで開始）
+        break;
+
+      case FiringState::SPINUP:
+        // スピンアップ完了を待つ
+        if (elapsed.count() >= shooter_spinup_ms_) {
+          // サーボトリガーを発動
+          if (trigger_client_) {
+            auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+            trigger_client_->async_send_request(request);
+            RCLCPP_INFO(get_logger(), "Servo triggered");
+          }
+          firing_state_ = FiringState::FIRING;
+          firing_state_start_time_ = now;
+        }
+        break;
+
+      case FiringState::FIRING:
+        // 発射時間経過を待つ
+        if (elapsed.count() >= shooter_fire_duration_ms_) {
+          // シューター停止
+          set_shooter_velocity(0.0);
+          RCLCPP_INFO(get_logger(), "Shooter stopped, entering cooldown");
+          firing_state_ = FiringState::COOLDOWN;
+          firing_state_start_time_ = now;
+          last_fire_time_ = now;
+        }
+        break;
+
+      case FiringState::COOLDOWN:
+        // クールダウン完了を待つ
+        if (elapsed.count() >= auto_fire_cooldown_ms_) {
+          firing_state_ = FiringState::IDLE;
+          RCLCPP_DEBUG(get_logger(), "Firing cooldown complete, ready for next shot");
+        }
+        break;
+    }
+  }
+
+  // 自動射撃を試行（条件: 認識信頼度 > しきい値、ターゲットが中央付近、IDLE状態）
+  void try_auto_fire(float confidence, double pan_error, double tilt_error)
+  {
+    if (!auto_fire_enabled_) {
+      return;
+    }
+
+    // 射撃中は新しい射撃を開始しない
+    if (firing_state_ != FiringState::IDLE) {
+      return;
+    }
+
+    // 認識信頼度チェック
+    if (confidence < auto_fire_threshold_) {
+      return;
+    }
+
+    // ターゲットが中央付近かチェック（pan/tilt誤差が許容範囲内）
+    if (std::abs(pan_error) > auto_fire_center_tolerance_ ||
+        std::abs(tilt_error) > auto_fire_center_tolerance_) {
+      return;
+    }
+
+    // 射撃シーケンス開始
+    RCLCPP_INFO(get_logger(), "AUTO-FIRE START! conf=%.2f, pan_err=%.3f, tilt_err=%.3f",
+                confidence, pan_error, tilt_error);
+
+    // シューターモーター開始
+    set_shooter_velocity(shooter_speed_rad_s_);
+    RCLCPP_INFO(get_logger(), "Shooter motor started: %.0f RPM (%.2f rad/s)",
+                shooter_speed_rpm_, shooter_speed_rad_s_);
+
+    firing_state_ = FiringState::SPINUP;
+    firing_state_start_time_ = std::chrono::steady_clock::now();
+  }
+
   bool update_tracker(const cv::Mat& frame)
   {
     if (!tracker_initialized_ || tracker_.empty()) {
@@ -556,6 +687,9 @@ private:
 
   void process_frame(cv::Mat& frame)
   {
+    // 射撃シーケンス状態マシンを更新（毎フレーム呼び出し）
+    update_firing_sequence();
+
     int width = frame.cols;
     int height = frame.rows;
     int frame_center_x = width / 2;
@@ -598,17 +732,20 @@ private:
           // Find best matching detection
           double best_iou = 0.0;
           cv::Rect best_match;
+          float best_confidence = 0.0f;
           for (int idx : async_result.indices) {
             double iou = calculate_iou(tracked_bbox_, async_result.boxes[idx]);
             if (iou > best_iou) {
               best_iou = iou;
               best_match = async_result.boxes[idx];
+              best_confidence = async_result.confidences[idx];
             }
           }
 
           // If detection matches, reset miss count and correct tracker
           if (best_iou > iou_threshold_) {
             detection_miss_count_ = 0;  // Reset miss count on successful match
+            last_detection_confidence_ = best_confidence;  // 射撃判定用に保存
             try {
               tracker_ = create_kcf_tracker();
               // KCF用にリサイズしたフレームとbboxで初期化
@@ -616,7 +753,7 @@ private:
               cv::Rect kcf_bbox = scale_bbox_for_kcf(best_match);
               tracker_->init(kcf_frame, kcf_bbox);
               tracked_bbox_ = best_match;  // 元のスケールで保存
-              RCLCPP_DEBUG(get_logger(), "Tracker corrected (IoU=%.2f)", best_iou);
+              RCLCPP_DEBUG(get_logger(), "Tracker corrected (IoU=%.2f, conf=%.2f)", best_iou, best_confidence);
             } catch (const cv::Exception& e) {
               RCLCPP_WARN(get_logger(), "Failed to reinit tracker: %s", e.what());
             }
@@ -759,6 +896,11 @@ private:
       // Set velocity commands: PI control + velocity feedforward
       pan_velocity_cmd = pan_delta + pan_feedforward;
       tilt_velocity_cmd = tilt_delta + tilt_feedforward;
+
+      // TRACKINGモードで自動射撃を試行
+      if (tracking_state_ == TrackingState::TRACKING) {
+        try_auto_fire(last_detection_confidence_, pan_error, tilt_error);
+      }
 
       // Update target position for display/monitoring only
       target_pan = current_pan_ + pan_delta;
@@ -1080,6 +1222,24 @@ private:
   // Scan state
   ScanDirection scan_direction_ = ScanDirection::RIGHT;
   double scan_target_tilt_ = 0.0;  // 現在のスキャンチルト目標
+
+  // Auto-fire parameters
+  bool auto_fire_enabled_;
+  double auto_fire_threshold_;
+  int auto_fire_cooldown_ms_;
+  double auto_fire_center_tolerance_;
+  double shooter_speed_rpm_;
+  int shooter_spinup_ms_;
+  int shooter_fire_duration_ms_;
+  double shooter_speed_rad_s_;
+
+  // Auto-fire state
+  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr trigger_client_;
+  rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr shooter_pub_;
+  FiringState firing_state_ = FiringState::IDLE;
+  std::chrono::steady_clock::time_point firing_state_start_time_;
+  std::chrono::steady_clock::time_point last_fire_time_;
+  float last_detection_confidence_ = 0.0f;  // 最後に検出された信頼度
 
   // Current joint positions
   double current_pan_ = 0.0;
