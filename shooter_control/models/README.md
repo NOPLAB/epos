@@ -20,12 +20,12 @@ Faster than YOLO, suitable for edge devices.
 
 1. **MobileNetSSD_deploy.prototxt** - Network definition
    ```bash
-   wget https://raw.githubusercontent.com/chuanqi305/MobileNet-SSD/master/MobileNetSSD_deploy.prototxt
+   wget https://raw.githubusercontent.com/PINTO0309/MobileNet-SSD-RealSense/master/caffemodel/MobileNetSSD/MobileNetSSD_deploy.prototxt
    ```
 
 2. **MobileNetSSD_deploy.caffemodel** (23MB) - Required
    ```bash
-   wget https://github.com/chuanqi305/MobileNet-SSD/raw/master/MobileNetSSD_deploy.caffemodel
+   wget https://github.com/PINTO0309/MobileNet-SSD-RealSense/raw/master/caffemodel/MobileNetSSD/MobileNetSSD_deploy.caffemodel
    ```
 
 ### YOLO v4-tiny (Higher accuracy, slower)

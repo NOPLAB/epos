@@ -22,14 +22,14 @@ echo ""
 echo "=== MobileNet-SSD (Recommended for Raspberry Pi) ==="
 if [ ! -f "MobileNetSSD_deploy.prototxt" ]; then
     echo "Downloading MobileNetSSD_deploy.prototxt..."
-    wget -q --show-progress https://raw.githubusercontent.com/chuanqi305/MobileNet-SSD/master/MobileNetSSD_deploy.prototxt
+    wget -q --show-progress https://raw.githubusercontent.com/PINTO0309/MobileNet-SSD-RealSense/master/caffemodel/MobileNetSSD/MobileNetSSD_deploy.prototxt
 else
     echo "MobileNetSSD_deploy.prototxt already exists, skipping."
 fi
 
 if [ ! -f "MobileNetSSD_deploy.caffemodel" ]; then
     echo "Downloading MobileNetSSD_deploy.caffemodel (23MB)..."
-    wget -q --show-progress https://github.com/chuanqi305/MobileNet-SSD/raw/master/MobileNetSSD_deploy.caffemodel
+    wget -q --show-progress https://github.com/PINTO0309/MobileNet-SSD-RealSense/raw/master/caffemodel/MobileNetSSD/MobileNetSSD_deploy.caffemodel
 else
     echo "MobileNetSSD_deploy.caffemodel already exists, skipping."
 fi
