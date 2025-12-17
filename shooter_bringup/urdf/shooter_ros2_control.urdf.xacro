@@ -48,6 +48,8 @@
     <!-- Shooter motor (node_id 5) - velocity control -->
     <joint name="shooter_joint">
       <param name="node_id">5</param>
+      <param name="velocity_acceleration">10000</param>
+      <param name="velocity_deceleration">4000</param>
       <command_interface name="velocity"/>
       <state_interface name="position"/>
       <state_interface name="velocity"/>

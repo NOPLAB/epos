@@ -98,12 +98,17 @@ services:
     volumes:
       - /dev:/dev
       - /tmp/.X11-unix:/tmp/.X11-unix
+      - /sys/class/pwm:/sys/class/pwm
     environment:
       - DISPLAY=${DISPLAY}
       - JOY_DEV_ID=${JOY_DEV_ID:-0}
       - CAMERA_DEVICE_ID=${CAMERA_DEVICE_ID:-0}
       - TRACKING_BUTTON=${TRACKING_BUTTON:-0}
       - SHOW_WINDOW=${SHOW_WINDOW:-true}
+      - PWM_CHIP=${PWM_CHIP:-0}
+      - PWM_CHANNEL=${PWM_CHANNEL:-0}
+      - SERVO_IDLE_DEG=${SERVO_IDLE_DEG:-0.0}
+      - SERVO_TRIGGER_DEG=${SERVO_TRIGGER_DEG:-180.0}
       - PAN_KP=${PAN_KP:-0.002}
       - PAN_KI=${PAN_KI:-0.0001}
       - TILT_KP=${TILT_KP:-0.002}
@@ -113,17 +118,19 @@ services:
       - VERIFICATION_INTERVAL=${VERIFICATION_INTERVAL:-30}
       - DETECTION_MISS_THRESHOLD=${DETECTION_MISS_THRESHOLD:-3}
       - DETECTION_SKIP_FRAMES=${DETECTION_SKIP_FRAMES:-3}
-      # Scan parameters (set based on homing center offset)
-      # PAN: CENTER_OFFSET=1650000 counts → ±1.5 rad typical range
-      # TILT: CENTER_OFFSET=110000 counts → -0.5 to +0.3 rad typical range
+      # Scan parameters (encoder count based, with 90% safety margin)
+      # PAN: limit ±1650000 counts → 90% = ±1485000 counts
+      # TILT: limit based on mechanical range
       - SCAN_ENABLED=${SCAN_ENABLED:-true}
       - SCAN_PAN_VELOCITY=${SCAN_PAN_VELOCITY:-0.5}
       - SCAN_TILT_VELOCITY=${SCAN_TILT_VELOCITY:-0.3}
-      - SCAN_PAN_MIN=${SCAN_PAN_MIN:--1.5}
-      - SCAN_PAN_MAX=${SCAN_PAN_MAX:-1.5}
-      - SCAN_TILT_MIN=${SCAN_TILT_MIN:--0.5}
-      - SCAN_TILT_MAX=${SCAN_TILT_MAX:-0.3}
-      - SCAN_TILT_STEP=${SCAN_TILT_STEP:-0.3}
+      - PAN_COUNTS_PER_REVOLUTION=${PAN_COUNTS_PER_REVOLUTION:-6600000.0}
+      - TILT_COUNTS_PER_REVOLUTION=${TILT_COUNTS_PER_REVOLUTION:-6600000.0}
+      - SCAN_PAN_MIN_COUNTS=${SCAN_PAN_MIN_COUNTS:--1485000}
+      - SCAN_PAN_MAX_COUNTS=${SCAN_PAN_MAX_COUNTS:-1485000}
+      - SCAN_TILT_MIN_COUNTS=${SCAN_TILT_MIN_COUNTS:--450000}
+      - SCAN_TILT_MAX_COUNTS=${SCAN_TILT_MAX_COUNTS:-270000}
+      - SCAN_TILT_STEP_COUNTS=${SCAN_TILT_STEP_COUNTS:-180000}
       # Auto-fire parameters
       - AUTO_FIRE_ENABLED=${AUTO_FIRE_ENABLED:-false}
       - AUTO_FIRE_THRESHOLD=${AUTO_FIRE_THRESHOLD:-0.7}
@@ -137,7 +144,15 @@ services:
     profiles:
       - body
     command: >
-      bash -c "ros2 run joy joy_node --ros-args -p device_id:=$${JOY_DEV_ID:-0} &
+      bash -c "(ros2 run shooter_control servo_trigger_node --ros-args
+      -p pwm_chip:=$${PWM_CHIP:-0}
+      -p pwm_channel:=$${PWM_CHANNEL:-0}
+      -p trigger_button:=5
+      -p return_delay_ms:=500
+      -p idle_angle_deg:=$${SERVO_IDLE_DEG:-0.0}
+      -p trigger_angle_deg:=$${SERVO_TRIGGER_DEG:-180.0} || echo 'servo_trigger_node failed') &
+      ros2 run joy joy_node --ros-args -p device_id:=$${JOY_DEV_ID:-0} &
+      sleep 2 &&
       ros2 launch shooter_control body_tracker.launch.py
       camera_device_id:=$${CAMERA_DEVICE_ID:-0}
       tracking_button_index:=$${TRACKING_BUTTON:-0}
@@ -154,11 +169,13 @@ services:
       scan_enabled:=$${SCAN_ENABLED:-true}
       scan_pan_velocity:=$${SCAN_PAN_VELOCITY:-0.5}
       scan_tilt_velocity:=$${SCAN_TILT_VELOCITY:-0.3}
-      scan_pan_min:=$${SCAN_PAN_MIN:--1.5}
-      scan_pan_max:=$${SCAN_PAN_MAX:-1.5}
-      scan_tilt_min:=$${SCAN_TILT_MIN:--0.5}
-      scan_tilt_max:=$${SCAN_TILT_MAX:-0.3}
-      scan_tilt_step:=$${SCAN_TILT_STEP:-0.3}
+      pan_counts_per_revolution:=$${PAN_COUNTS_PER_REVOLUTION:-6600000.0}
+      tilt_counts_per_revolution:=$${TILT_COUNTS_PER_REVOLUTION:-6600000.0}
+      scan_pan_min_counts:=$${SCAN_PAN_MIN_COUNTS:--1485000}
+      scan_pan_max_counts:=$${SCAN_PAN_MAX_COUNTS:-1485000}
+      scan_tilt_min_counts:=$${SCAN_TILT_MIN_COUNTS:--450000}
+      scan_tilt_max_counts:=$${SCAN_TILT_MAX_COUNTS:-270000}
+      scan_tilt_step_counts:=$${SCAN_TILT_STEP_COUNTS:-180000}
       auto_fire_enabled:=$${AUTO_FIRE_ENABLED:-false}
       auto_fire_threshold:=$${AUTO_FIRE_THRESHOLD:-0.7}
       auto_fire_cooldown_ms:=$${AUTO_FIRE_COOLDOWN_MS:-2000}

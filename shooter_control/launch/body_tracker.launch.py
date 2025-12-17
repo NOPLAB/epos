@@ -105,7 +105,7 @@ def generate_launch_description():
         description='Show GUI window (set false for headless mode)'
     )
 
-    # Scan parameters (DETECTING mode)
+    # Scan parameters (DETECTING mode) - encoder count based
     scan_enabled_arg = DeclareLaunchArgument(
         'scan_enabled',
         default_value='true',
@@ -124,34 +124,46 @@ def generate_launch_description():
         description='Tilt scan velocity (rad/s)'
     )
 
-    scan_pan_min_arg = DeclareLaunchArgument(
-        'scan_pan_min',
-        default_value='-1.5',
-        description='Pan scan minimum angle (rad)'
+    pan_counts_per_revolution_arg = DeclareLaunchArgument(
+        'pan_counts_per_revolution',
+        default_value='6600000.0',
+        description='Pan encoder counts per revolution'
     )
 
-    scan_pan_max_arg = DeclareLaunchArgument(
-        'scan_pan_max',
-        default_value='1.5',
-        description='Pan scan maximum angle (rad)'
+    tilt_counts_per_revolution_arg = DeclareLaunchArgument(
+        'tilt_counts_per_revolution',
+        default_value='6600000.0',
+        description='Tilt encoder counts per revolution'
     )
 
-    scan_tilt_min_arg = DeclareLaunchArgument(
-        'scan_tilt_min',
-        default_value='-0.5',
-        description='Tilt scan minimum angle (rad)'
+    scan_pan_min_counts_arg = DeclareLaunchArgument(
+        'scan_pan_min_counts',
+        default_value='-1650000',
+        description='Pan scan minimum (encoder counts)'
     )
 
-    scan_tilt_max_arg = DeclareLaunchArgument(
-        'scan_tilt_max',
-        default_value='0.3',
-        description='Tilt scan maximum angle (rad)'
+    scan_pan_max_counts_arg = DeclareLaunchArgument(
+        'scan_pan_max_counts',
+        default_value='1650000',
+        description='Pan scan maximum (encoder counts)'
     )
 
-    scan_tilt_step_arg = DeclareLaunchArgument(
-        'scan_tilt_step',
-        default_value='0.2',
-        description='Tilt step between scan passes (rad)'
+    scan_tilt_min_counts_arg = DeclareLaunchArgument(
+        'scan_tilt_min_counts',
+        default_value='-500000',
+        description='Tilt scan minimum (encoder counts)'
+    )
+
+    scan_tilt_max_counts_arg = DeclareLaunchArgument(
+        'scan_tilt_max_counts',
+        default_value='300000',
+        description='Tilt scan maximum (encoder counts)'
+    )
+
+    scan_tilt_step_counts_arg = DeclareLaunchArgument(
+        'scan_tilt_step_counts',
+        default_value='200000',
+        description='Tilt step between scan passes (encoder counts)'
     )
 
     # Auto-fire parameters
@@ -223,11 +235,13 @@ def generate_launch_description():
             'scan_enabled': LaunchConfiguration('scan_enabled'),
             'scan_pan_velocity': LaunchConfiguration('scan_pan_velocity'),
             'scan_tilt_velocity': LaunchConfiguration('scan_tilt_velocity'),
-            'scan_pan_min': LaunchConfiguration('scan_pan_min'),
-            'scan_pan_max': LaunchConfiguration('scan_pan_max'),
-            'scan_tilt_min': LaunchConfiguration('scan_tilt_min'),
-            'scan_tilt_max': LaunchConfiguration('scan_tilt_max'),
-            'scan_tilt_step': LaunchConfiguration('scan_tilt_step'),
+            'pan_counts_per_revolution': LaunchConfiguration('pan_counts_per_revolution'),
+            'tilt_counts_per_revolution': LaunchConfiguration('tilt_counts_per_revolution'),
+            'scan_pan_min_counts': LaunchConfiguration('scan_pan_min_counts'),
+            'scan_pan_max_counts': LaunchConfiguration('scan_pan_max_counts'),
+            'scan_tilt_min_counts': LaunchConfiguration('scan_tilt_min_counts'),
+            'scan_tilt_max_counts': LaunchConfiguration('scan_tilt_max_counts'),
+            'scan_tilt_step_counts': LaunchConfiguration('scan_tilt_step_counts'),
             'auto_fire_enabled': LaunchConfiguration('auto_fire_enabled'),
             'auto_fire_threshold': LaunchConfiguration('auto_fire_threshold'),
             'auto_fire_cooldown_ms': LaunchConfiguration('auto_fire_cooldown_ms'),
@@ -258,11 +272,13 @@ def generate_launch_description():
         scan_enabled_arg,
         scan_pan_velocity_arg,
         scan_tilt_velocity_arg,
-        scan_pan_min_arg,
-        scan_pan_max_arg,
-        scan_tilt_min_arg,
-        scan_tilt_max_arg,
-        scan_tilt_step_arg,
+        pan_counts_per_revolution_arg,
+        tilt_counts_per_revolution_arg,
+        scan_pan_min_counts_arg,
+        scan_pan_max_counts_arg,
+        scan_tilt_min_counts_arg,
+        scan_tilt_max_counts_arg,
+        scan_tilt_step_counts_arg,
         auto_fire_enabled_arg,
         auto_fire_threshold_arg,
         auto_fire_cooldown_ms_arg,

@@ -60,15 +60,17 @@ public:
     // Model parameters
     declare_parameter("detection_skip_frames", 3);       // DETECTINGモードでのフレームスキップ数
 
-    // Scan parameters (DETECTING mode) - set based on homing center offset
+    // Scan parameters (DETECTING mode) - encoder count based
     declare_parameter("scan_enabled", true);             // スキャン動作を有効化
     declare_parameter("scan_pan_velocity", 0.5);         // パンスキャン速度 (rad/s)
     declare_parameter("scan_tilt_velocity", 0.3);        // チルトスキャン速度 (rad/s)
-    declare_parameter("scan_pan_min", -1.5);             // パンスキャン最小角度 (rad)
-    declare_parameter("scan_pan_max", 1.5);              // パンスキャン最大角度 (rad)
-    declare_parameter("scan_tilt_min", -0.5);            // チルト最小角度 (rad)
-    declare_parameter("scan_tilt_max", 0.3);             // チルト最大角度 (rad)
-    declare_parameter("scan_tilt_step", 0.3);            // チルトステップ (rad)
+    declare_parameter("pan_counts_per_revolution", 6600000.0);  // パンのエンコーダーカウント/回転
+    declare_parameter("tilt_counts_per_revolution", 6600000.0); // チルトのエンコーダーカウント/回転
+    declare_parameter("scan_pan_min_counts", -1650000);  // パンスキャン最小 (エンコーダーカウント)
+    declare_parameter("scan_pan_max_counts", 1650000);   // パンスキャン最大 (エンコーダーカウント)
+    declare_parameter("scan_tilt_min_counts", -500000);  // チルト最小 (エンコーダーカウント)
+    declare_parameter("scan_tilt_max_counts", 300000);   // チルト最大 (エンコーダーカウント)
+    declare_parameter("scan_tilt_step_counts", 200000);  // チルトステップ (エンコーダーカウント)
 
     // Auto-fire parameters
     declare_parameter("auto_fire_enabled", false);       // 自動射撃を有効化
@@ -104,15 +106,17 @@ public:
     // Model parameters
     detection_skip_frames_ = get_parameter("detection_skip_frames").as_int();
 
-    // Scan parameters
+    // Scan parameters (encoder count based)
     scan_enabled_ = get_parameter("scan_enabled").as_bool();
     scan_pan_velocity_ = get_parameter("scan_pan_velocity").as_double();
     scan_tilt_velocity_ = get_parameter("scan_tilt_velocity").as_double();
-    scan_pan_min_ = get_parameter("scan_pan_min").as_double();
-    scan_pan_max_ = get_parameter("scan_pan_max").as_double();
-    scan_tilt_min_ = get_parameter("scan_tilt_min").as_double();
-    scan_tilt_max_ = get_parameter("scan_tilt_max").as_double();
-    scan_tilt_step_ = get_parameter("scan_tilt_step").as_double();
+    pan_counts_per_revolution_ = get_parameter("pan_counts_per_revolution").as_double();
+    tilt_counts_per_revolution_ = get_parameter("tilt_counts_per_revolution").as_double();
+    scan_pan_min_counts_ = get_parameter("scan_pan_min_counts").as_int();
+    scan_pan_max_counts_ = get_parameter("scan_pan_max_counts").as_int();
+    scan_tilt_min_counts_ = get_parameter("scan_tilt_min_counts").as_int();
+    scan_tilt_max_counts_ = get_parameter("scan_tilt_max_counts").as_int();
+    scan_tilt_step_counts_ = get_parameter("scan_tilt_step_counts").as_int();
 
     // Auto-fire parameters
     auto_fire_enabled_ = get_parameter("auto_fire_enabled").as_bool();
@@ -165,6 +169,13 @@ public:
       trigger_client_ = create_client<std_srvs::srv::Trigger>("/servo_trigger_node/trigger");
       RCLCPP_INFO(get_logger(), "Auto-fire enabled: threshold=%.2f, cooldown=%dms, center_tol=%.2f",
                   auto_fire_threshold_, auto_fire_cooldown_ms_, auto_fire_center_tolerance_);
+      RCLCPP_INFO(get_logger(), "Waiting for servo trigger service...");
+      // 起動時に5秒待機
+      if (trigger_client_->wait_for_service(std::chrono::seconds(5))) {
+        RCLCPP_INFO(get_logger(), "Servo trigger service is available");
+      } else {
+        RCLCPP_WARN(get_logger(), "Servo trigger service not available, continuing anyway");
+      }
     }
 
     if (use_camera_device_) {
@@ -219,8 +230,12 @@ private:
     for (size_t i = 0; i < msg->name.size(); ++i) {
       if (msg->name[i] == "pan_joint" && i < msg->position.size()) {
         current_pan_ = msg->position[i];
+        // ラジアンからエンコーダーカウントに変換
+        current_pan_counts_ = static_cast<int>(current_pan_ * pan_counts_per_revolution_ / (2.0 * M_PI));
       } else if (msg->name[i] == "tilt_joint" && i < msg->position.size()) {
         current_tilt_ = msg->position[i];
+        // ラジアンからエンコーダーカウントに変換
+        current_tilt_counts_ = static_cast<int>(current_tilt_ * tilt_counts_per_revolution_ / (2.0 * M_PI));
       }
     }
   }
@@ -362,10 +377,10 @@ private:
   void reset_scan_state()
   {
     scan_direction_ = ScanDirection::RIGHT;
-    scan_target_tilt_ = scan_tilt_min_;
+    scan_target_tilt_counts_ = scan_tilt_min_counts_;
   }
 
-  // スキャン速度を計算（DETECTINGモード用）
+  // スキャン速度を計算（DETECTINGモード用）- エンコーダーカウントベース
   void calculate_scan_velocity(double& pan_vel, double& tilt_vel)
   {
     if (!scan_enabled_) {
@@ -374,36 +389,38 @@ private:
       return;
     }
 
-    // パンの端に到達したら方向を反転し、チルトを1段階変更
+    // パンの端に到達したら方向を反転し、チルトを1段階変更（エンコーダーカウントで判定）
     if (scan_direction_ == ScanDirection::RIGHT) {
-      if (current_pan_ >= scan_pan_max_) {
+      if (current_pan_counts_ >= scan_pan_max_counts_) {
         // 右端(max)に到達 → 左に方向転換、チルトを上げる
         scan_direction_ = ScanDirection::LEFT;
-        scan_target_tilt_ += scan_tilt_step_;
-        if (scan_target_tilt_ > scan_tilt_max_) {
-          scan_target_tilt_ = scan_tilt_min_;  // 最上部に達したら最下部に戻る
+        scan_target_tilt_counts_ += scan_tilt_step_counts_;
+        if (scan_target_tilt_counts_ > scan_tilt_max_counts_) {
+          scan_target_tilt_counts_ = scan_tilt_min_counts_;  // 最上部に達したら最下部に戻る
         }
-        RCLCPP_DEBUG(get_logger(), "Scan: reached max (%.2f), switching to LEFT, tilt=%.2f",
-                     scan_pan_max_, scan_target_tilt_);
+        RCLCPP_DEBUG(get_logger(), "Scan: reached max (%d counts), switching to LEFT, tilt=%d counts",
+                     scan_pan_max_counts_, scan_target_tilt_counts_);
       }
       pan_vel = scan_pan_velocity_;
     } else {
-      if (current_pan_ <= scan_pan_min_) {
+      if (current_pan_counts_ <= scan_pan_min_counts_) {
         // 左端(min)に到達 → 右に方向転換、チルトを上げる
         scan_direction_ = ScanDirection::RIGHT;
-        scan_target_tilt_ += scan_tilt_step_;
-        if (scan_target_tilt_ > scan_tilt_max_) {
-          scan_target_tilt_ = scan_tilt_min_;
+        scan_target_tilt_counts_ += scan_tilt_step_counts_;
+        if (scan_target_tilt_counts_ > scan_tilt_max_counts_) {
+          scan_target_tilt_counts_ = scan_tilt_min_counts_;
         }
-        RCLCPP_DEBUG(get_logger(), "Scan: reached min (%.2f), switching to RIGHT, tilt=%.2f",
-                     scan_pan_min_, scan_target_tilt_);
+        RCLCPP_DEBUG(get_logger(), "Scan: reached min (%d counts), switching to RIGHT, tilt=%d counts",
+                     scan_pan_min_counts_, scan_target_tilt_counts_);
       }
       pan_vel = -scan_pan_velocity_;
     }
 
-    // チルトは目標に向かってP制御
-    double tilt_error = scan_target_tilt_ - current_tilt_;
-    tilt_vel = std::clamp(tilt_error * 2.0, -scan_tilt_velocity_, scan_tilt_velocity_);
+    // チルトは目標に向かってP制御（エンコーダーカウントで計算、出力はrad/s）
+    int tilt_error_counts = scan_target_tilt_counts_ - current_tilt_counts_;
+    // カウント誤差をラジアンに変換してP制御
+    double tilt_error_rad = static_cast<double>(tilt_error_counts) * 2.0 * M_PI / tilt_counts_per_revolution_;
+    tilt_vel = std::clamp(tilt_error_rad * 2.0, -scan_tilt_velocity_, scan_tilt_velocity_);
   }
 
   // シューターモーターを制御
@@ -434,9 +451,15 @@ private:
         if (elapsed.count() >= shooter_spinup_ms_) {
           // サーボトリガーを発動
           if (trigger_client_) {
-            auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
-            trigger_client_->async_send_request(request);
-            RCLCPP_INFO(get_logger(), "Servo triggered");
+            if (trigger_client_->service_is_ready()) {
+              auto request = std::make_shared<std_srvs::srv::Trigger::Request>();
+              auto future = trigger_client_->async_send_request(request);
+              RCLCPP_INFO(get_logger(), "Servo trigger service called");
+            } else {
+              RCLCPP_ERROR(get_logger(), "Servo trigger service NOT READY - cannot fire!");
+            }
+          } else {
+            RCLCPP_ERROR(get_logger(), "Servo trigger client is NULL - auto_fire_enabled?");
           }
           firing_state_ = FiringState::FIRING;
           firing_state_start_time_ = now;
@@ -1216,19 +1239,21 @@ private:
   int detection_frame_counter_ = 0;
   double kcf_scale_ = 0.5;  // KCFトラッカー用のスケール（0.5 = 160x120）
 
-  // Scan parameters
+  // Scan parameters (encoder count based)
   bool scan_enabled_;
   double scan_pan_velocity_;
   double scan_tilt_velocity_;
-  double scan_pan_min_;
-  double scan_pan_max_;
-  double scan_tilt_min_;
-  double scan_tilt_max_;
-  double scan_tilt_step_;
+  double pan_counts_per_revolution_;
+  double tilt_counts_per_revolution_;
+  int scan_pan_min_counts_;
+  int scan_pan_max_counts_;
+  int scan_tilt_min_counts_;
+  int scan_tilt_max_counts_;
+  int scan_tilt_step_counts_;
 
   // Scan state
   ScanDirection scan_direction_ = ScanDirection::RIGHT;
-  double scan_target_tilt_ = 0.0;  // 現在のスキャンチルト目標
+  int scan_target_tilt_counts_ = 0;  // 現在のスキャンチルト目標（エンコーダーカウント）
 
   // Auto-fire parameters
   bool auto_fire_enabled_;
@@ -1251,6 +1276,8 @@ private:
   // Current joint positions
   double current_pan_ = 0.0;
   double current_tilt_ = 0.0;
+  int current_pan_counts_ = 0;
+  int current_tilt_counts_ = 0;
 
   // PI control state
   double pan_integral_error_ = 0.0;
