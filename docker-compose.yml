@@ -110,7 +110,20 @@ services:
       - TILT_KI=${TILT_KI:-0.0001}
       - BASE_ANGULAR_GAIN=${BASE_ANGULAR_GAIN:-0.5}
       - VELOCITY_FEEDFORWARD_GAIN=${VELOCITY_FEEDFORWARD_GAIN:-0.005}
-      - YOLO_VERIFICATION_INTERVAL=${YOLO_VERIFICATION_INTERVAL:-3}
+      - VERIFICATION_INTERVAL=${VERIFICATION_INTERVAL:-30}
+      - DETECTION_MISS_THRESHOLD=${DETECTION_MISS_THRESHOLD:-3}
+      - DETECTION_SKIP_FRAMES=${DETECTION_SKIP_FRAMES:-3}
+      # Scan parameters (set based on homing center offset)
+      # PAN: CENTER_OFFSET=1650000 counts → ±1.5 rad typical range
+      # TILT: CENTER_OFFSET=110000 counts → -0.5 to +0.3 rad typical range
+      - SCAN_ENABLED=${SCAN_ENABLED:-true}
+      - SCAN_PAN_VELOCITY=${SCAN_PAN_VELOCITY:-0.5}
+      - SCAN_TILT_VELOCITY=${SCAN_TILT_VELOCITY:-0.3}
+      - SCAN_PAN_MIN=${SCAN_PAN_MIN:--1.5}
+      - SCAN_PAN_MAX=${SCAN_PAN_MAX:-1.5}
+      - SCAN_TILT_MIN=${SCAN_TILT_MIN:--0.5}
+      - SCAN_TILT_MAX=${SCAN_TILT_MAX:-0.3}
+      - SCAN_TILT_STEP=${SCAN_TILT_STEP:-0.3}
     stdin_open: true
     tty: true
     profiles:
@@ -127,7 +140,17 @@ services:
       tilt_ki:=$${TILT_KI:-0.0001}
       base_angular_gain:=$${BASE_ANGULAR_GAIN:-0.5}
       velocity_feedforward_gain:=$${VELOCITY_FEEDFORWARD_GAIN:-0.005}
-      yolo_verification_interval:=$${YOLO_VERIFICATION_INTERVAL:-3}"
+      verification_interval:=$${VERIFICATION_INTERVAL:-30}
+      detection_miss_threshold:=$${DETECTION_MISS_THRESHOLD:-3}
+      detection_skip_frames:=$${DETECTION_SKIP_FRAMES:-3}
+      scan_enabled:=$${SCAN_ENABLED:-true}
+      scan_pan_velocity:=$${SCAN_PAN_VELOCITY:-0.5}
+      scan_tilt_velocity:=$${SCAN_TILT_VELOCITY:-0.3}
+      scan_pan_min:=$${SCAN_PAN_MIN:--1.5}
+      scan_pan_max:=$${SCAN_PAN_MAX:-1.5}
+      scan_tilt_min:=$${SCAN_TILT_MIN:--0.5}
+      scan_tilt_max:=$${SCAN_TILT_MAX:-0.3}
+      scan_tilt_step:=$${SCAN_TILT_STEP:-0.3}"
 
   # ============================================
   # Simulation Services (Gazebo Sim)

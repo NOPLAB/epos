@@ -75,10 +75,22 @@ def generate_launch_description():
         description='Frames before declaring target lost (150 = ~5sec at 30fps)'
     )
 
-    yolo_verification_interval_arg = DeclareLaunchArgument(
-        'yolo_verification_interval',
+    verification_interval_arg = DeclareLaunchArgument(
+        'verification_interval',
+        default_value='30',
+        description='Frames between detection verification during tracking'
+    )
+
+    detection_miss_threshold_arg = DeclareLaunchArgument(
+        'detection_miss_threshold',
         default_value='3',
-        description='Frames between YOLO verification during tracking (~10FPS at 30fps)'
+        description='Consecutive detection misses before returning to detection mode'
+    )
+
+    detection_skip_frames_arg = DeclareLaunchArgument(
+        'detection_skip_frames',
+        default_value='3',
+        description='Frames to skip between detections in DETECTING mode'
     )
 
     iou_threshold_arg = DeclareLaunchArgument(
@@ -91,6 +103,55 @@ def generate_launch_description():
         'show_window',
         default_value='true',
         description='Show GUI window (set false for headless mode)'
+    )
+
+    # Scan parameters (DETECTING mode)
+    scan_enabled_arg = DeclareLaunchArgument(
+        'scan_enabled',
+        default_value='true',
+        description='Enable scanning in DETECTING mode'
+    )
+
+    scan_pan_velocity_arg = DeclareLaunchArgument(
+        'scan_pan_velocity',
+        default_value='0.5',
+        description='Pan scan velocity (rad/s)'
+    )
+
+    scan_tilt_velocity_arg = DeclareLaunchArgument(
+        'scan_tilt_velocity',
+        default_value='0.3',
+        description='Tilt scan velocity (rad/s)'
+    )
+
+    scan_pan_min_arg = DeclareLaunchArgument(
+        'scan_pan_min',
+        default_value='-1.5',
+        description='Pan scan minimum angle (rad)'
+    )
+
+    scan_pan_max_arg = DeclareLaunchArgument(
+        'scan_pan_max',
+        default_value='1.5',
+        description='Pan scan maximum angle (rad)'
+    )
+
+    scan_tilt_min_arg = DeclareLaunchArgument(
+        'scan_tilt_min',
+        default_value='-0.5',
+        description='Tilt scan minimum angle (rad)'
+    )
+
+    scan_tilt_max_arg = DeclareLaunchArgument(
+        'scan_tilt_max',
+        default_value='0.3',
+        description='Tilt scan maximum angle (rad)'
+    )
+
+    scan_tilt_step_arg = DeclareLaunchArgument(
+        'scan_tilt_step',
+        default_value='0.2',
+        description='Tilt step between scan passes (rad)'
     )
 
     # Body tracker node
@@ -111,9 +172,19 @@ def generate_launch_description():
             'confidence_threshold': LaunchConfiguration('confidence_threshold'),
             'tracking_button_index': LaunchConfiguration('tracking_button_index'),
             'lost_threshold': LaunchConfiguration('lost_threshold'),
-            'yolo_verification_interval': LaunchConfiguration('yolo_verification_interval'),
+            'verification_interval': LaunchConfiguration('verification_interval'),
+            'detection_miss_threshold': LaunchConfiguration('detection_miss_threshold'),
+            'detection_skip_frames': LaunchConfiguration('detection_skip_frames'),
             'iou_threshold': LaunchConfiguration('iou_threshold'),
             'show_window': LaunchConfiguration('show_window'),
+            'scan_enabled': LaunchConfiguration('scan_enabled'),
+            'scan_pan_velocity': LaunchConfiguration('scan_pan_velocity'),
+            'scan_tilt_velocity': LaunchConfiguration('scan_tilt_velocity'),
+            'scan_pan_min': LaunchConfiguration('scan_pan_min'),
+            'scan_pan_max': LaunchConfiguration('scan_pan_max'),
+            'scan_tilt_min': LaunchConfiguration('scan_tilt_min'),
+            'scan_tilt_max': LaunchConfiguration('scan_tilt_max'),
+            'scan_tilt_step': LaunchConfiguration('scan_tilt_step'),
         }]
     )
 
@@ -129,8 +200,18 @@ def generate_launch_description():
         confidence_threshold_arg,
         tracking_button_index_arg,
         lost_threshold_arg,
-        yolo_verification_interval_arg,
+        verification_interval_arg,
+        detection_miss_threshold_arg,
+        detection_skip_frames_arg,
         iou_threshold_arg,
         show_window_arg,
+        scan_enabled_arg,
+        scan_pan_velocity_arg,
+        scan_tilt_velocity_arg,
+        scan_pan_min_arg,
+        scan_pan_max_arg,
+        scan_tilt_min_arg,
+        scan_tilt_max_arg,
+        scan_tilt_step_arg,
         body_tracker_node,
     ])

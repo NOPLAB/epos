@@ -22,6 +22,9 @@ class BodyTrackerNode : public rclcpp::Node
   // Tracking state enum (defined at class scope for early access)
   enum class TrackingState { DETECTING, TRACKING };
 
+  // Scan direction enum
+  enum class ScanDirection { RIGHT, LEFT };
+
 public:
   BodyTrackerNode() : Node("body_tracker")
   {
@@ -44,12 +47,23 @@ public:
     // Tracking parameters
     declare_parameter("tracking_button_index", 0);       // Aボタン
     declare_parameter("lost_threshold", 150);            // 150フレーム(約5秒)でロスト判定
-    declare_parameter("yolo_verification_interval", 30); // 30フレームごとにYOLO検証（約1秒@30fps）
+    declare_parameter("verification_interval", 30);      // 30フレームごとに検証（約1秒@30fps）
     declare_parameter("iou_threshold", 0.3);             // IoU閾値
+    declare_parameter("detection_miss_threshold", 3);    // 連続N回検出失敗でDETECTINGに移行
     declare_parameter("show_window", true);              // GUIウィンドウ表示
 
     // Model parameters
     declare_parameter("detection_skip_frames", 3);       // DETECTINGモードでのフレームスキップ数
+
+    // Scan parameters (DETECTING mode) - set based on homing center offset
+    declare_parameter("scan_enabled", true);             // スキャン動作を有効化
+    declare_parameter("scan_pan_velocity", 0.5);         // パンスキャン速度 (rad/s)
+    declare_parameter("scan_tilt_velocity", 0.3);        // チルトスキャン速度 (rad/s)
+    declare_parameter("scan_pan_min", -1.5);             // パンスキャン最小角度 (rad)
+    declare_parameter("scan_pan_max", 1.5);              // パンスキャン最大角度 (rad)
+    declare_parameter("scan_tilt_min", -0.5);            // チルト最小角度 (rad)
+    declare_parameter("scan_tilt_max", 0.3);             // チルト最大角度 (rad)
+    declare_parameter("scan_tilt_step", 0.3);            // チルトステップ (rad)
 
     pan_kp_ = get_parameter("pan_kp").as_double();
     pan_ki_ = get_parameter("pan_ki").as_double();
@@ -68,12 +82,23 @@ public:
     // Tracking parameters
     tracking_button_index_ = get_parameter("tracking_button_index").as_int();
     lost_threshold_ = get_parameter("lost_threshold").as_int();
-    yolo_verification_interval_ = get_parameter("yolo_verification_interval").as_int();
+    verification_interval_ = get_parameter("verification_interval").as_int();
     iou_threshold_ = get_parameter("iou_threshold").as_double();
+    detection_miss_threshold_ = get_parameter("detection_miss_threshold").as_int();
     show_window_ = get_parameter("show_window").as_bool();
 
     // Model parameters
     detection_skip_frames_ = get_parameter("detection_skip_frames").as_int();
+
+    // Scan parameters
+    scan_enabled_ = get_parameter("scan_enabled").as_bool();
+    scan_pan_velocity_ = get_parameter("scan_pan_velocity").as_double();
+    scan_tilt_velocity_ = get_parameter("scan_tilt_velocity").as_double();
+    scan_pan_min_ = get_parameter("scan_pan_min").as_double();
+    scan_pan_max_ = get_parameter("scan_pan_max").as_double();
+    scan_tilt_min_ = get_parameter("scan_tilt_min").as_double();
+    scan_tilt_max_ = get_parameter("scan_tilt_max").as_double();
+    scan_tilt_step_ = get_parameter("scan_tilt_step").as_double();
 
     // Load MobileNet-SSD model
     std::string pkg_share = ament_index_cpp::get_package_share_directory("shooter_control");
@@ -129,8 +154,8 @@ public:
 
     RCLCPP_INFO(get_logger(), "Body tracker node started (pan: Kp=%.4f Ki=%.5f, tilt: Kp=%.4f Ki=%.5f)",
                 pan_kp_, pan_ki_, tilt_kp_, tilt_ki_);
-    RCLCPP_INFO(get_logger(), "Tracking: button=%d, lost_threshold=%d, yolo_interval=%d",
-                tracking_button_index_, lost_threshold_, yolo_verification_interval_);
+    RCLCPP_INFO(get_logger(), "Tracking: button=%d, lost_threshold=%d, verification_interval=%d, miss_threshold=%d",
+                tracking_button_index_, lost_threshold_, verification_interval_, detection_miss_threshold_);
 
     // Start YOLO thread
     yolo_thread_running_ = true;
@@ -247,7 +272,8 @@ private:
       tracker_initialized_ = true;
       tracking_state_ = TrackingState::TRACKING;
       tracking_lost_count_ = 0;
-      yolo_verification_counter_ = 0;
+      verification_counter_ = 0;
+      detection_miss_count_ = 0;
 
       RCLCPP_INFO(get_logger(), "Started tracking: bbox=(%d,%d,%d,%d) kcf_scale=%.2f",
                   bbox.x, bbox.y, bbox.width, bbox.height, kcf_scale_);
@@ -264,7 +290,8 @@ private:
     tracker_initialized_ = false;
     tracking_state_ = TrackingState::DETECTING;
     tracking_lost_count_ = 0;
-    yolo_verification_counter_ = 0;
+    verification_counter_ = 0;
+    detection_miss_count_ = 0;
     request_start_tracking_ = false;
     tracking_enabled_ = false;
     detection_in_progress_ = false;
@@ -276,6 +303,56 @@ private:
     // Reset velocity feedforward state
     prev_body_center_x_ = -1;
     prev_body_center_y_ = -1;
+
+    // Reset scan state
+    reset_scan_state();
+  }
+
+  void reset_scan_state()
+  {
+    scan_direction_ = ScanDirection::RIGHT;
+    scan_target_tilt_ = scan_tilt_min_;
+  }
+
+  // スキャン速度を計算（DETECTINGモード用）
+  void calculate_scan_velocity(double& pan_vel, double& tilt_vel)
+  {
+    if (!scan_enabled_) {
+      pan_vel = 0.0;
+      tilt_vel = 0.0;
+      return;
+    }
+
+    // パンの端に到達したら方向を反転し、チルトを1段階変更
+    if (scan_direction_ == ScanDirection::RIGHT) {
+      if (current_pan_ >= scan_pan_max_) {
+        // 右端(max)に到達 → 左に方向転換、チルトを上げる
+        scan_direction_ = ScanDirection::LEFT;
+        scan_target_tilt_ += scan_tilt_step_;
+        if (scan_target_tilt_ > scan_tilt_max_) {
+          scan_target_tilt_ = scan_tilt_min_;  // 最上部に達したら最下部に戻る
+        }
+        RCLCPP_DEBUG(get_logger(), "Scan: reached max (%.2f), switching to LEFT, tilt=%.2f",
+                     scan_pan_max_, scan_target_tilt_);
+      }
+      pan_vel = scan_pan_velocity_;
+    } else {
+      if (current_pan_ <= scan_pan_min_) {
+        // 左端(min)に到達 → 右に方向転換、チルトを上げる
+        scan_direction_ = ScanDirection::RIGHT;
+        scan_target_tilt_ += scan_tilt_step_;
+        if (scan_target_tilt_ > scan_tilt_max_) {
+          scan_target_tilt_ = scan_tilt_min_;
+        }
+        RCLCPP_DEBUG(get_logger(), "Scan: reached min (%.2f), switching to RIGHT, tilt=%.2f",
+                     scan_pan_min_, scan_target_tilt_);
+      }
+      pan_vel = -scan_pan_velocity_;
+    }
+
+    // チルトは目標に向かってP制御
+    double tilt_error = scan_target_tilt_ - current_tilt_;
+    tilt_vel = std::clamp(tilt_error * 2.0, -scan_tilt_velocity_, scan_tilt_velocity_);
   }
 
   bool update_tracker(const cv::Mat& frame)
@@ -495,46 +572,69 @@ private:
       // KCF is executed every frame (fast)
       bool track_success = update_tracker(frame);
 
-      // Request async YOLO verification periodically (non-blocking)
-      yolo_verification_counter_++;
-      if (yolo_verification_counter_ >= yolo_verification_interval_) {
-        yolo_verification_counter_ = 0;
+      // Request async detection verification periodically (non-blocking)
+      verification_counter_++;
+      if (verification_counter_ >= verification_interval_) {
+        verification_counter_ = 0;
         request_async_yolo(frame);
       }
 
-      // Check if async YOLO result is ready (non-blocking)
+      // Check if async detection result is ready (non-blocking)
       DetectionResult async_result;
       if (get_async_yolo_result(async_result)) {
         num_detections = async_result.indices.size();
 
-        // Find best matching YOLO detection
-        double best_iou = 0.0;
-        cv::Rect best_match;
-        for (int idx : async_result.indices) {
-          double iou = calculate_iou(tracked_bbox_, async_result.boxes[idx]);
-          if (iou > best_iou) {
-            best_iou = iou;
-            best_match = async_result.boxes[idx];
-          }
-        }
+        if (async_result.indices.empty()) {
+          // No person detected by MobileNet-SSD
+          detection_miss_count_++;
+          RCLCPP_DEBUG(get_logger(), "Detection miss: %d/%d", detection_miss_count_, detection_miss_threshold_);
 
-        // If YOLO detection matches, recreate tracker with corrected bbox
-        if (best_iou > iou_threshold_) {
-          try {
-            tracker_ = create_kcf_tracker();
-            // KCF用にリサイズしたフレームとbboxで初期化
-            cv::Mat kcf_frame = resize_for_kcf(frame);
-            cv::Rect kcf_bbox = scale_bbox_for_kcf(best_match);
-            tracker_->init(kcf_frame, kcf_bbox);
-            tracked_bbox_ = best_match;  // 元のスケールで保存
-            RCLCPP_DEBUG(get_logger(), "Tracker corrected by YOLO (IoU=%.2f)", best_iou);
-          } catch (const cv::Exception& e) {
-            RCLCPP_WARN(get_logger(), "Failed to reinit tracker: %s", e.what());
+          if (detection_miss_count_ >= detection_miss_threshold_) {
+            RCLCPP_WARN(get_logger(), "Detection verification failed %d times, returning to detection mode",
+                        detection_miss_count_);
+            stop_tracking();
+          }
+        } else {
+          // Find best matching detection
+          double best_iou = 0.0;
+          cv::Rect best_match;
+          for (int idx : async_result.indices) {
+            double iou = calculate_iou(tracked_bbox_, async_result.boxes[idx]);
+            if (iou > best_iou) {
+              best_iou = iou;
+              best_match = async_result.boxes[idx];
+            }
+          }
+
+          // If detection matches, reset miss count and correct tracker
+          if (best_iou > iou_threshold_) {
+            detection_miss_count_ = 0;  // Reset miss count on successful match
+            try {
+              tracker_ = create_kcf_tracker();
+              // KCF用にリサイズしたフレームとbboxで初期化
+              cv::Mat kcf_frame = resize_for_kcf(frame);
+              cv::Rect kcf_bbox = scale_bbox_for_kcf(best_match);
+              tracker_->init(kcf_frame, kcf_bbox);
+              tracked_bbox_ = best_match;  // 元のスケールで保存
+              RCLCPP_DEBUG(get_logger(), "Tracker corrected (IoU=%.2f)", best_iou);
+            } catch (const cv::Exception& e) {
+              RCLCPP_WARN(get_logger(), "Failed to reinit tracker: %s", e.what());
+            }
+          } else {
+            // Person detected but IoU too low (tracking wrong target?)
+            detection_miss_count_++;
+            RCLCPP_DEBUG(get_logger(), "IoU too low (%.2f), miss: %d/%d",
+                        best_iou, detection_miss_count_, detection_miss_threshold_);
+
+            if (detection_miss_count_ >= detection_miss_threshold_) {
+              RCLCPP_WARN(get_logger(), "Tracking target mismatch, returning to detection mode");
+              stop_tracking();
+            }
           }
         }
       }
 
-      // Always use KCF result for control (not waiting for YOLO)
+      // Always use KCF result for control (not waiting for detection)
       if (track_success) {
         tracking_lost_count_ = 0;
         target_box = tracked_bbox_;
@@ -542,7 +642,7 @@ private:
       } else {
         tracking_lost_count_++;
         if (tracking_lost_count_ >= lost_threshold_) {
-          RCLCPP_WARN(get_logger(), "Target lost, returning to detection mode");
+          RCLCPP_WARN(get_logger(), "KCF tracking lost, returning to detection mode");
           stop_tracking();
         } else {
           // Use last known position
@@ -692,6 +792,11 @@ private:
     } else {
       pan_integral_error_ *= 0.95;
       tilt_integral_error_ *= 0.95;
+
+      // DETECTINGモードかつ追跡有効時はスキャン動作
+      if (tracking_enabled_ && tracking_state_ == TrackingState::DETECTING) {
+        calculate_scan_velocity(pan_velocity_cmd, tilt_velocity_cmd);
+      }
     }
 
     // Draw all detected persons in detecting mode (faded) - only when tracking is enabled
@@ -927,7 +1032,8 @@ private:
 
   // Tracking lost detection
   int tracking_lost_count_ = 0;
-  int yolo_verification_counter_ = 0;
+  int verification_counter_ = 0;
+  int detection_miss_count_ = 0;
 
   // Async detection state for DETECTING mode
   bool detection_in_progress_ = false;
@@ -950,8 +1056,9 @@ private:
   // Tracking parameters
   int tracking_button_index_;
   int lost_threshold_;
-  int yolo_verification_interval_;
+  int verification_interval_;
   double iou_threshold_;
+  int detection_miss_threshold_;
   bool show_window_;
 
   // Model parameters
@@ -959,6 +1066,20 @@ private:
   int ssd_person_class_id_ = 15;  // person class in VOC dataset
   int detection_frame_counter_ = 0;
   double kcf_scale_ = 0.5;  // KCFトラッカー用のスケール（0.5 = 160x120）
+
+  // Scan parameters
+  bool scan_enabled_;
+  double scan_pan_velocity_;
+  double scan_tilt_velocity_;
+  double scan_pan_min_;
+  double scan_pan_max_;
+  double scan_tilt_min_;
+  double scan_tilt_max_;
+  double scan_tilt_step_;
+
+  // Scan state
+  ScanDirection scan_direction_ = ScanDirection::RIGHT;
+  double scan_target_tilt_ = 0.0;  // 現在のスキャンチルト目標
 
   // Current joint positions
   double current_pan_ = 0.0;
