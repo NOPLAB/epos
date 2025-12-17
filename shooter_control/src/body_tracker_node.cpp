@@ -231,6 +231,7 @@ private:
     yolo_verification_counter_ = 0;
     request_start_tracking_ = false;
     tracking_enabled_ = false;
+    detection_in_progress_ = false;
 
     // Reset PI integral errors when stopping tracking
     pan_integral_error_ = 0.0;
@@ -494,27 +495,40 @@ private:
       }
 
     } else if (tracking_enabled_ || request_start_tracking_) {
-      // === DETECTING MODE (トラッキング有効時のみYOLO検出) ===
-      yolo_result = run_yolo_detection(frame);
-      num_detections = yolo_result.indices.size();
+      // === DETECTING MODE (非同期YOLO検出) ===
 
-      if (!yolo_result.indices.empty()) {
-        if (request_start_tracking_) {
-          // Select target closest to center and start tracking
-          cv::Rect selected = select_best_target(yolo_result.boxes, yolo_result.indices, width, height);
-          if (start_tracking(frame, selected)) {
-            target_box = selected;
-            target_valid = true;
+      // 非同期YOLO検出をリクエスト（まだリクエスト中でなければ）
+      if (!detection_in_progress_) {
+        request_async_yolo(frame);
+        detection_in_progress_ = true;
+      }
+
+      // 非同期YOLO結果を確認（ノンブロッキング）
+      YoloResult async_result;
+      if (get_async_yolo_result(async_result)) {
+        detection_in_progress_ = false;  // 次のリクエストを許可
+        yolo_result = async_result;
+        num_detections = yolo_result.indices.size();
+
+        if (!yolo_result.indices.empty()) {
+          if (request_start_tracking_) {
+            // Select target closest to center and start tracking
+            cv::Rect selected = select_best_target(yolo_result.boxes, yolo_result.indices, width, height);
+            if (start_tracking(frame, selected)) {
+              target_box = selected;
+              target_valid = true;
+            }
+            request_start_tracking_ = false;
           }
-          request_start_tracking_ = false;
-        }
-      } else {
-        // No detection and start tracking was requested
-        if (request_start_tracking_) {
-          RCLCPP_WARN(get_logger(), "No person detected, cannot start tracking");
-          request_start_tracking_ = false;
+        } else {
+          // No detection and start tracking was requested
+          if (request_start_tracking_) {
+            RCLCPP_WARN(get_logger(), "No person detected, cannot start tracking");
+            request_start_tracking_ = false;
+          }
         }
       }
+      // YOLO結果待ち中はtarget_valid=falseのまま（制御コマンドは0を送信）
     }
     // === IDLE MODE: tracking_enabled_==false の場合はYOLO検出をスキップ ===
 
@@ -632,6 +646,12 @@ private:
     pan_tilt_msg.data[0] = pan_velocity_cmd;
     pan_tilt_msg.data[1] = tilt_velocity_cmd;
     pan_tilt_pub_->publish(pan_tilt_msg);
+
+    // Log control output for debugging
+    RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 500,
+      "Control: pan_vel=%.4f tilt_vel=%.4f target_valid=%d state=%s",
+      pan_velocity_cmd, tilt_velocity_cmd, target_valid,
+      tracking_state_ == TrackingState::TRACKING ? "TRACKING" : "DETECTING");
 
     // Calculate base angular velocity
     double base_angular_vel = 0.0;
@@ -847,6 +867,9 @@ private:
   // Tracking lost detection
   int tracking_lost_count_ = 0;
   int yolo_verification_counter_ = 0;
+
+  // Async detection state for DETECTING mode
+  bool detection_in_progress_ = false;
 
   // Parameters
   double pan_kp_;
