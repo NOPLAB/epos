@@ -35,11 +35,12 @@ public:
     declare_parameter("nms_threshold", 0.4);
     declare_parameter("pan_base_threshold", 0.7);   // pan角度がこの割合を超えたら台車も回転
     declare_parameter("base_angular_gain", 0.5);    // 台車の角速度ゲイン [rad/s per rad]
+    declare_parameter("velocity_feedforward_gain", 0.005); // 目標速度フィードフォワードゲイン
 
     // Tracking parameters
     declare_parameter("tracking_button_index", 0);       // Aボタン
     declare_parameter("lost_threshold", 150);            // 150フレーム(約5秒)でロスト判定
-    declare_parameter("yolo_verification_interval", 15); // 15フレームごとにYOLO検証
+    declare_parameter("yolo_verification_interval", 3);  // 3フレームごとにYOLO検証（約10FPS@30fps）
     declare_parameter("iou_threshold", 0.3);             // IoU閾値
     declare_parameter("show_window", true);              // GUIウィンドウ表示
 
@@ -55,6 +56,7 @@ public:
     nms_threshold_ = get_parameter("nms_threshold").as_double();
     pan_base_threshold_ = get_parameter("pan_base_threshold").as_double();
     base_angular_gain_ = get_parameter("base_angular_gain").as_double();
+    velocity_feedforward_gain_ = get_parameter("velocity_feedforward_gain").as_double();
 
     // Tracking parameters
     tracking_button_index_ = get_parameter("tracking_button_index").as_int();
@@ -217,6 +219,10 @@ private:
     // Reset PI integral errors when stopping tracking
     pan_integral_error_ = 0.0;
     tilt_integral_error_ = 0.0;
+
+    // Reset velocity feedforward state
+    prev_body_center_x_ = -1;
+    prev_body_center_y_ = -1;
   }
 
   bool update_tracker(const cv::Mat& frame)
@@ -487,6 +493,16 @@ private:
       int body_center_x = target_box.x + target_box.width / 2;
       int body_center_y = target_box.y + target_box.height / 2;
 
+      // Calculate target velocity (pixels/frame -> normalized)
+      double target_vel_x = 0.0;
+      double target_vel_y = 0.0;
+      if (prev_body_center_x_ >= 0 && prev_body_center_y_ >= 0) {
+        target_vel_x = static_cast<double>(body_center_x - prev_body_center_x_) / frame_center_x;
+        target_vel_y = static_cast<double>(body_center_y - prev_body_center_y_) / frame_center_y;
+      }
+      prev_body_center_x_ = body_center_x;
+      prev_body_center_y_ = body_center_y;
+
       pan_error = static_cast<double>(frame_center_x - body_center_x) / frame_center_x;
       tilt_error = static_cast<double>(frame_center_y - body_center_y) / frame_center_y;
 
@@ -506,9 +522,13 @@ private:
       tilt_i_term = tilt_ki_ * tilt_integral_error_;
       double tilt_delta = -(tilt_p_term + tilt_i_term);
 
-      // Set velocity commands directly (not position)
-      pan_velocity_cmd = pan_delta;
-      tilt_velocity_cmd = tilt_delta;
+      // Velocity feedforward: target moving right -> pan should follow (negative direction)
+      double pan_feedforward = -velocity_feedforward_gain_ * target_vel_x;
+      double tilt_feedforward = -velocity_feedforward_gain_ * target_vel_y;
+
+      // Set velocity commands: PI control + velocity feedforward
+      pan_velocity_cmd = pan_delta + pan_feedforward;
+      tilt_velocity_cmd = tilt_delta + tilt_feedforward;
 
       // Update target position for display/monitoring only
       target_pan = current_pan_ + pan_delta;
@@ -788,6 +808,7 @@ private:
   double nms_threshold_;
   double pan_base_threshold_;
   double base_angular_gain_;
+  double velocity_feedforward_gain_;
 
   // Tracking parameters
   int tracking_button_index_;
@@ -803,6 +824,10 @@ private:
   // PI control state
   double pan_integral_error_ = 0.0;
   double tilt_integral_error_ = 0.0;
+
+  // Velocity feedforward state (previous frame target position)
+  int prev_body_center_x_ = -1;
+  int prev_body_center_y_ = -1;
 };
 
 int main(int argc, char** argv)

@@ -36,6 +36,12 @@ def generate_launch_description():
         description='Base angular velocity gain [rad/s per rad]'
     )
 
+    velocity_feedforward_gain_arg = DeclareLaunchArgument(
+        'velocity_feedforward_gain',
+        default_value='0.005',
+        description='Velocity feedforward gain for tracking moving targets'
+    )
+
     # Camera parameters
     camera_device_id_arg = DeclareLaunchArgument(
         'camera_device_id',
@@ -71,8 +77,8 @@ def generate_launch_description():
 
     yolo_verification_interval_arg = DeclareLaunchArgument(
         'yolo_verification_interval',
-        default_value='30',
-        description='Frames between YOLO verification during tracking'
+        default_value='3',
+        description='Frames between YOLO verification during tracking (~10FPS at 30fps)'
     )
 
     iou_threshold_arg = DeclareLaunchArgument(
@@ -99,6 +105,7 @@ def generate_launch_description():
             'tilt_kp': LaunchConfiguration('tilt_kp'),
             'tilt_ki': LaunchConfiguration('tilt_ki'),
             'base_angular_gain': LaunchConfiguration('base_angular_gain'),
+            'velocity_feedforward_gain': LaunchConfiguration('velocity_feedforward_gain'),
             'camera_device_id': LaunchConfiguration('camera_device_id'),
             'use_camera_device': LaunchConfiguration('use_camera_device'),
             'confidence_threshold': LaunchConfiguration('confidence_threshold'),
@@ -116,6 +123,7 @@ def generate_launch_description():
         tilt_kp_arg,
         tilt_ki_arg,
         base_angular_gain_arg,
+        velocity_feedforward_gain_arg,
         camera_device_id_arg,
         use_camera_device_arg,
         confidence_threshold_arg,
