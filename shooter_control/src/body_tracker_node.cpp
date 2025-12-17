@@ -39,7 +39,7 @@ public:
     // Tracking parameters
     declare_parameter("tracking_button_index", 0);       // Aボタン
     declare_parameter("lost_threshold", 150);            // 150フレーム(約5秒)でロスト判定
-    declare_parameter("yolo_verification_interval", 30); // 30フレームごとにYOLO検証
+    declare_parameter("yolo_verification_interval", 15); // 15フレームごとにYOLO検証
     declare_parameter("iou_threshold", 0.3);             // IoU閾値
     declare_parameter("show_window", true);              // GUIウィンドウ表示
 
@@ -186,7 +186,7 @@ private:
   bool start_tracking(const cv::Mat& frame, const cv::Rect& bbox)
   {
     try {
-      tracker_ = cv::TrackerCSRT::create();
+      tracker_ = cv::TrackerKCF::create();
       tracker_->init(frame, bbox);
 
       tracked_bbox_ = bbox;
@@ -285,7 +285,7 @@ private:
 
     // Create blob from image
     cv::Mat blob;
-    cv::dnn::blobFromImage(frame, blob, 1/255.0, cv::Size(416, 416),
+    cv::dnn::blobFromImage(frame, blob, 1/255.0, cv::Size(320, 320),
                            cv::Scalar(0, 0, 0), true, false);
     net_.setInput(blob);
 
@@ -383,7 +383,7 @@ private:
         // If YOLO detection matches, recreate tracker with corrected bbox
         if (best_iou > iou_threshold_) {
           try {
-            tracker_ = cv::TrackerCSRT::create();
+            tracker_ = cv::TrackerKCF::create();
             tracker_->init(frame, best_match);
             tracked_bbox_ = best_match;
           } catch (const cv::Exception& e) {
@@ -448,10 +448,31 @@ private:
     if (!tracking_enabled_) {
       // === IDLE: 正面（0, 0）に戻す ===
       double home_gain = 0.5;  // 正面復帰の速度ゲイン
-      pan_velocity_cmd = -current_pan_ * home_gain;
-      tilt_velocity_cmd = -current_tilt_ * home_gain;
-      target_pan = 0.0;
-      target_tilt = 0.0;
+      double max_velocity = 0.5;  // 最大速度制限 [rad/s]
+      double deadband = 0.02;  // 停止デッドバンド [rad]
+
+      // ホームポジションをリミット内にクランプ
+      double home_pan = std::clamp(0.0, -pan_limit_, pan_limit_);
+      double home_tilt = std::clamp(0.0, -tilt_limit_, tilt_limit_);
+
+      double pan_diff = home_pan - current_pan_;
+      double tilt_diff = home_tilt - current_tilt_;
+
+      // デッドバンド内なら停止
+      if (std::abs(pan_diff) < deadband) {
+        pan_velocity_cmd = 0.0;
+      } else {
+        pan_velocity_cmd = std::clamp(pan_diff * home_gain, -max_velocity, max_velocity);
+      }
+
+      if (std::abs(tilt_diff) < deadband) {
+        tilt_velocity_cmd = 0.0;
+      } else {
+        tilt_velocity_cmd = std::clamp(tilt_diff * home_gain, -max_velocity, max_velocity);
+      }
+
+      target_pan = home_pan;
+      target_tilt = home_tilt;
 
       // 積分誤差をリセット
       pan_integral_error_ = 0.0;
@@ -595,7 +616,7 @@ private:
     } else if (tracking_state_ == TrackingState::TRACKING) {
       status_color = cv::Scalar(0, 165, 255);  // Orange
       status_text = "TRACKING";
-      mode_text = "CSRT";
+      mode_text = "KCF";
     } else if (body_detected) {
       status_color = cv::Scalar(0, 255, 0);    // Green
       status_text = "DETECTING";
