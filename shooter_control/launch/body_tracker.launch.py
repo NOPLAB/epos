@@ -154,6 +154,49 @@ def generate_launch_description():
         description='Tilt step between scan passes (rad)'
     )
 
+    # Auto-fire parameters
+    auto_fire_enabled_arg = DeclareLaunchArgument(
+        'auto_fire_enabled',
+        default_value='false',
+        description='Enable automatic firing when target is centered'
+    )
+
+    auto_fire_threshold_arg = DeclareLaunchArgument(
+        'auto_fire_threshold',
+        default_value='0.7',
+        description='Detection confidence threshold for auto-fire'
+    )
+
+    auto_fire_cooldown_ms_arg = DeclareLaunchArgument(
+        'auto_fire_cooldown_ms',
+        default_value='2000',
+        description='Cooldown between shots (ms)'
+    )
+
+    auto_fire_center_tolerance_arg = DeclareLaunchArgument(
+        'auto_fire_center_tolerance',
+        default_value='0.15',
+        description='Center tolerance for auto-fire (normalized)'
+    )
+
+    shooter_speed_rpm_arg = DeclareLaunchArgument(
+        'shooter_speed_rpm',
+        default_value='10000.0',
+        description='Shooter motor speed (RPM)'
+    )
+
+    shooter_spinup_ms_arg = DeclareLaunchArgument(
+        'shooter_spinup_ms',
+        default_value='500',
+        description='Shooter spinup time (ms)'
+    )
+
+    shooter_fire_duration_ms_arg = DeclareLaunchArgument(
+        'shooter_fire_duration_ms',
+        default_value='300',
+        description='Firing duration (ms)'
+    )
+
     # Body tracker node
     body_tracker_node = Node(
         package='shooter_control',
@@ -185,6 +228,13 @@ def generate_launch_description():
             'scan_tilt_min': LaunchConfiguration('scan_tilt_min'),
             'scan_tilt_max': LaunchConfiguration('scan_tilt_max'),
             'scan_tilt_step': LaunchConfiguration('scan_tilt_step'),
+            'auto_fire_enabled': LaunchConfiguration('auto_fire_enabled'),
+            'auto_fire_threshold': LaunchConfiguration('auto_fire_threshold'),
+            'auto_fire_cooldown_ms': LaunchConfiguration('auto_fire_cooldown_ms'),
+            'auto_fire_center_tolerance': LaunchConfiguration('auto_fire_center_tolerance'),
+            'shooter_speed_rpm': LaunchConfiguration('shooter_speed_rpm'),
+            'shooter_spinup_ms': LaunchConfiguration('shooter_spinup_ms'),
+            'shooter_fire_duration_ms': LaunchConfiguration('shooter_fire_duration_ms'),
         }]
     )
 
@@ -213,5 +263,12 @@ def generate_launch_description():
         scan_tilt_min_arg,
         scan_tilt_max_arg,
         scan_tilt_step_arg,
+        auto_fire_enabled_arg,
+        auto_fire_threshold_arg,
+        auto_fire_cooldown_ms_arg,
+        auto_fire_center_tolerance_arg,
+        shooter_speed_rpm_arg,
+        shooter_spinup_ms_arg,
+        shooter_fire_duration_ms_arg,
         body_tracker_node,
     ])

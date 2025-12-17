@@ -246,11 +246,12 @@ private:
     tracking_enabled_ = !tracking_enabled_;
 
     if (tracking_enabled_) {
-      // Request to start tracking (will be processed in next frame)
-      request_start_tracking_ = true;
-      RCLCPP_INFO(get_logger(), "Tracking ENABLED");
+      // 自動スキャン＆検出開始（DETECTINGモードへ）
+      tracking_state_ = TrackingState::DETECTING;
+      reset_scan_state();
+      RCLCPP_INFO(get_logger(), "Tracking ENABLED - scanning for target");
     } else {
-      // Stop tracking completely
+      // 完全停止
       stop_tracking();
       RCLCPP_INFO(get_logger(), "Tracking DISABLED");
     }
@@ -320,7 +321,8 @@ private:
     }
   }
 
-  void stop_tracking()
+  // トラッキングロスト時: DETECTINGモードに戻る（スキャン継続）
+  void return_to_detecting()
   {
     tracker_.release();
     tracker_initialized_ = false;
@@ -328,11 +330,9 @@ private:
     tracking_lost_count_ = 0;
     verification_counter_ = 0;
     detection_miss_count_ = 0;
-    request_start_tracking_ = false;
-    tracking_enabled_ = false;
     detection_in_progress_ = false;
 
-    // Reset PI integral errors when stopping tracking
+    // Reset PI integral errors
     pan_integral_error_ = 0.0;
     tilt_integral_error_ = 0.0;
 
@@ -340,8 +340,23 @@ private:
     prev_body_center_x_ = -1;
     prev_body_center_y_ = -1;
 
-    // Reset scan state
+    // スキャン状態をリセットして再スキャン開始
     reset_scan_state();
+
+    RCLCPP_INFO(get_logger(), "Returning to DETECTING mode, resuming scan");
+  }
+
+  // 完全停止: ユーザーがAボタンで無効化した時
+  void stop_tracking()
+  {
+    return_to_detecting();
+    tracking_enabled_ = false;
+
+    // 射撃中なら停止
+    if (firing_state_ != FiringState::IDLE) {
+      set_shooter_velocity(0.0);
+      firing_state_ = FiringState::IDLE;
+    }
   }
 
   void reset_scan_state()
@@ -726,7 +741,7 @@ private:
           if (detection_miss_count_ >= detection_miss_threshold_) {
             RCLCPP_WARN(get_logger(), "Detection verification failed %d times, returning to detection mode",
                         detection_miss_count_);
-            stop_tracking();
+            return_to_detecting();
           }
         } else {
           // Find best matching detection
@@ -765,7 +780,7 @@ private:
 
             if (detection_miss_count_ >= detection_miss_threshold_) {
               RCLCPP_WARN(get_logger(), "Tracking target mismatch, returning to detection mode");
-              stop_tracking();
+              return_to_detecting();
             }
           }
         }
@@ -780,7 +795,7 @@ private:
         tracking_lost_count_++;
         if (tracking_lost_count_ >= lost_threshold_) {
           RCLCPP_WARN(get_logger(), "KCF tracking lost, returning to detection mode");
-          stop_tracking();
+          return_to_detecting();
         } else {
           // Use last known position
           target_box = tracked_bbox_;
@@ -788,8 +803,8 @@ private:
         }
       }
 
-    } else if (tracking_enabled_ || request_start_tracking_) {
-      // === DETECTING MODE (非同期検出 with フレームスキップ) ===
+    } else if (tracking_enabled_) {
+      // === DETECTING MODE (自動スキャン＆検出→トラッキング開始) ===
 
       // フレームスキップ: 指定フレーム数ごとに検出をリクエスト
       detection_frame_counter_++;
@@ -811,22 +826,15 @@ private:
         num_detections = yolo_result.indices.size();
 
         if (!yolo_result.indices.empty()) {
-          if (request_start_tracking_) {
-            // Select target closest to center and start tracking
-            cv::Rect selected = select_best_target(yolo_result.boxes, yolo_result.indices, width, height);
-            if (start_tracking(frame, selected)) {
-              target_box = selected;
-              target_valid = true;
-            }
-            request_start_tracking_ = false;
-          }
-        } else {
-          // No detection and start tracking was requested
-          if (request_start_tracking_) {
-            RCLCPP_WARN(get_logger(), "No person detected, cannot start tracking");
-            request_start_tracking_ = false;
+          // 人物検出！自動的にトラッキング開始
+          cv::Rect selected = select_best_target(yolo_result.boxes, yolo_result.indices, width, height);
+          if (start_tracking(frame, selected)) {
+            target_box = selected;
+            target_valid = true;
+            RCLCPP_INFO(get_logger(), "Person detected, auto-starting tracking");
           }
         }
+        // 検出なしの場合はスキャン継続（何もしない）
       }
       // YOLO結果待ち中はtarget_valid=falseのまま（制御コマンドは0を送信）
     }
@@ -1166,7 +1174,6 @@ private:
   cv::Rect tracked_bbox_;
   bool tracker_initialized_ = false;
   TrackingState tracking_state_ = TrackingState::DETECTING;
-  bool request_start_tracking_ = false;
 
   // Joystick state
   bool last_tracking_button_state_ = false;

@@ -124,6 +124,14 @@ services:
       - SCAN_TILT_MIN=${SCAN_TILT_MIN:--0.5}
       - SCAN_TILT_MAX=${SCAN_TILT_MAX:-0.3}
       - SCAN_TILT_STEP=${SCAN_TILT_STEP:-0.3}
+      # Auto-fire parameters
+      - AUTO_FIRE_ENABLED=${AUTO_FIRE_ENABLED:-false}
+      - AUTO_FIRE_THRESHOLD=${AUTO_FIRE_THRESHOLD:-0.7}
+      - AUTO_FIRE_COOLDOWN_MS=${AUTO_FIRE_COOLDOWN_MS:-2000}
+      - AUTO_FIRE_CENTER_TOLERANCE=${AUTO_FIRE_CENTER_TOLERANCE:-0.15}
+      - SHOOTER_SPEED_RPM=${SHOOTER_SPEED_RPM:-10000.0}
+      - SHOOTER_SPINUP_MS=${SHOOTER_SPINUP_MS:-500}
+      - SHOOTER_FIRE_DURATION_MS=${SHOOTER_FIRE_DURATION_MS:-300}
     stdin_open: true
     tty: true
     profiles:
@@ -150,7 +158,14 @@ services:
       scan_pan_max:=$${SCAN_PAN_MAX:-1.5}
       scan_tilt_min:=$${SCAN_TILT_MIN:--0.5}
       scan_tilt_max:=$${SCAN_TILT_MAX:-0.3}
-      scan_tilt_step:=$${SCAN_TILT_STEP:-0.3}"
+      scan_tilt_step:=$${SCAN_TILT_STEP:-0.3}
+      auto_fire_enabled:=$${AUTO_FIRE_ENABLED:-false}
+      auto_fire_threshold:=$${AUTO_FIRE_THRESHOLD:-0.7}
+      auto_fire_cooldown_ms:=$${AUTO_FIRE_COOLDOWN_MS:-2000}
+      auto_fire_center_tolerance:=$${AUTO_FIRE_CENTER_TOLERANCE:-0.15}
+      shooter_speed_rpm:=$${SHOOTER_SPEED_RPM:-10000.0}
+      shooter_spinup_ms:=$${SHOOTER_SPINUP_MS:-500}
+      shooter_fire_duration_ms:=$${SHOOTER_FIRE_DURATION_MS:-300}"
 
   # ============================================
   # Simulation Services (Gazebo Sim)
