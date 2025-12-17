@@ -104,6 +104,11 @@ services:
       - CAMERA_DEVICE_ID=${CAMERA_DEVICE_ID:-0}
       - TRACKING_BUTTON=${TRACKING_BUTTON:-0}
       - SHOW_WINDOW=${SHOW_WINDOW:-true}
+      - PAN_KP=${PAN_KP:-0.002}
+      - PAN_KI=${PAN_KI:-0.0001}
+      - TILT_KP=${TILT_KP:-0.002}
+      - TILT_KI=${TILT_KI:-0.0001}
+      - BASE_ANGULAR_GAIN=${BASE_ANGULAR_GAIN:-0.5}
     stdin_open: true
     tty: true
     profiles:
@@ -113,7 +118,12 @@ services:
       ros2 launch shooter_control body_tracker.launch.py
       camera_device_id:=$${CAMERA_DEVICE_ID:-0}
       tracking_button_index:=$${TRACKING_BUTTON:-0}
-      show_window:=$${SHOW_WINDOW:-false}"
+      show_window:=$${SHOW_WINDOW:-false}
+      pan_kp:=$${PAN_KP:-0.002}
+      pan_ki:=$${PAN_KI:-0.0001}
+      tilt_kp:=$${TILT_KP:-0.002}
+      tilt_ki:=$${TILT_KI:-0.0001}
+      base_angular_gain:=$${BASE_ANGULAR_GAIN:-0.5}"
 
   # ============================================
   # Simulation Services (Gazebo Sim)

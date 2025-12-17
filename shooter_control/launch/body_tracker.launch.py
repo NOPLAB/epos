@@ -30,6 +30,12 @@ def generate_launch_description():
         description='Tilt integral gain'
     )
 
+    base_angular_gain_arg = DeclareLaunchArgument(
+        'base_angular_gain',
+        default_value='0.5',
+        description='Base angular velocity gain [rad/s per rad]'
+    )
+
     # Camera parameters
     camera_device_id_arg = DeclareLaunchArgument(
         'camera_device_id',
@@ -92,6 +98,7 @@ def generate_launch_description():
             'pan_ki': LaunchConfiguration('pan_ki'),
             'tilt_kp': LaunchConfiguration('tilt_kp'),
             'tilt_ki': LaunchConfiguration('tilt_ki'),
+            'base_angular_gain': LaunchConfiguration('base_angular_gain'),
             'camera_device_id': LaunchConfiguration('camera_device_id'),
             'use_camera_device': LaunchConfiguration('use_camera_device'),
             'confidence_threshold': LaunchConfiguration('confidence_threshold'),
@@ -108,6 +115,7 @@ def generate_launch_description():
         pan_ki_arg,
         tilt_kp_arg,
         tilt_ki_arg,
+        base_angular_gain_arg,
         camera_device_id_arg,
         use_camera_device_arg,
         confidence_threshold_arg,

@@ -377,10 +377,10 @@ private:
           }
         }
 
-        // If YOLO detection matches, update tracker with corrected bbox
+        // If YOLO detection matches, recreate tracker with corrected bbox
         if (best_iou > iou_threshold_) {
-          // Re-initialize tracker with YOLO-corrected bbox
           try {
+            tracker_ = cv::TrackerCSRT::create();
             tracker_->init(frame, best_match);
             tracked_bbox_ = best_match;
           } catch (const cv::Exception& e) {
