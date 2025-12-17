@@ -15,9 +15,28 @@ else
 fi
 
 cd "$MODELS_DIR"
-echo "Downloading YOLO models to: $MODELS_DIR"
+echo "Downloading detection models to: $MODELS_DIR"
 
-# YOLOv4-tiny weights (required)
+# MobileNet-SSD (recommended for Raspberry Pi)
+echo ""
+echo "=== MobileNet-SSD (Recommended for Raspberry Pi) ==="
+if [ ! -f "MobileNetSSD_deploy.prototxt" ]; then
+    echo "Downloading MobileNetSSD_deploy.prototxt..."
+    wget -q --show-progress https://raw.githubusercontent.com/chuanqi305/MobileNet-SSD/master/MobileNetSSD_deploy.prototxt
+else
+    echo "MobileNetSSD_deploy.prototxt already exists, skipping."
+fi
+
+if [ ! -f "MobileNetSSD_deploy.caffemodel" ]; then
+    echo "Downloading MobileNetSSD_deploy.caffemodel (23MB)..."
+    wget -q --show-progress https://github.com/chuanqi305/MobileNet-SSD/raw/master/MobileNetSSD_deploy.caffemodel
+else
+    echo "MobileNetSSD_deploy.caffemodel already exists, skipping."
+fi
+
+# YOLOv4-tiny weights (optional, higher accuracy but slower)
+echo ""
+echo "=== YOLOv4-tiny (Optional, higher accuracy) ==="
 if [ ! -f "yolov4-tiny.weights" ]; then
     echo "Downloading yolov4-tiny.weights (24MB)..."
     wget -q --show-progress https://github.com/AlexeyAB/darknet/releases/download/darknet_yolo_v4_pre/yolov4-tiny.weights
@@ -25,14 +44,6 @@ else
     echo "yolov4-tiny.weights already exists, skipping."
 fi
 
-# YOLO11n (optional, for future use)
-if [ ! -f "yolo11n.pt" ]; then
-    echo "Downloading yolo11n.pt (5.4MB)..."
-    wget -q --show-progress https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt
-else
-    echo "yolo11n.pt already exists, skipping."
-fi
-
 echo ""
 echo "Done! Models in: $MODELS_DIR"
-ls -lh "$MODELS_DIR"/*.weights "$MODELS_DIR"/*.pt 2>/dev/null || true
+ls -lh "$MODELS_DIR"/*.caffemodel "$MODELS_DIR"/*.prototxt "$MODELS_DIR"/*.weights 2>/dev/null || true

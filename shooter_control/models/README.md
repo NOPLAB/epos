@@ -1,6 +1,6 @@
-# YOLO Models
+# Detection Models
 
-This directory contains YOLO model files for human body detection.
+This directory contains model files for human body detection.
 
 ## Quick Setup
 
@@ -14,21 +14,42 @@ ros2 run shooter_control download_models.sh
 
 If the script doesn't work, download manually:
 
+### MobileNet-SSD (Recommended for Raspberry Pi)
+
+Faster than YOLO, suitable for edge devices.
+
+1. **MobileNetSSD_deploy.prototxt** - Network definition
+   ```bash
+   wget https://raw.githubusercontent.com/chuanqi305/MobileNet-SSD/master/MobileNetSSD_deploy.prototxt
+   ```
+
+2. **MobileNetSSD_deploy.caffemodel** (23MB) - Required
+   ```bash
+   wget https://github.com/chuanqi305/MobileNet-SSD/raw/master/MobileNetSSD_deploy.caffemodel
+   ```
+
+### YOLO v4-tiny (Higher accuracy, slower)
+
 1. **yolov4-tiny.weights** (24MB) - Required
    ```bash
    wget https://github.com/AlexeyAB/darknet/releases/download/darknet_yolo_v4_pre/yolov4-tiny.weights
    ```
 
-2. **yolo11n.pt** (5.4MB) - Optional (for future use)
-   ```bash
-   wget https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt
-   ```
-
 ## File List
 
-| File | Size | Status |
-|------|------|--------|
-| coco.names | 625B | Git tracked |
-| yolov4-tiny.cfg | 3.2KB | Git tracked |
-| yolov4-tiny.weights | 24MB | Download required |
-| yolo11n.pt | 5.4MB | Optional download |
+| File | Size | Model | Status |
+|------|------|-------|--------|
+| MobileNetSSD_deploy.prototxt | 28KB | MobileNet-SSD | Download required |
+| MobileNetSSD_deploy.caffemodel | 23MB | MobileNet-SSD | Download required |
+| coco.names | 625B | YOLO | Git tracked |
+| yolov4-tiny.cfg | 3.2KB | YOLO | Git tracked |
+| yolov4-tiny.weights | 24MB | YOLO | Download required |
+
+## Model Selection
+
+Set the `model_type` parameter in your launch file:
+
+```yaml
+model_type: "mobilenet-ssd"  # Recommended for Raspberry Pi (faster)
+model_type: "yolo"           # Higher accuracy but slower
+```

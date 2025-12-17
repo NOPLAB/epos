@@ -48,6 +48,10 @@ public:
     declare_parameter("iou_threshold", 0.3);             // IoU閾値
     declare_parameter("show_window", true);              // GUIウィンドウ表示
 
+    // Model parameters
+    declare_parameter("model_type", "mobilenet-ssd");    // "yolo" or "mobilenet-ssd"
+    declare_parameter("detection_skip_frames", 3);       // DETECTINGモードでのフレームスキップ数
+
     pan_kp_ = get_parameter("pan_kp").as_double();
     pan_ki_ = get_parameter("pan_ki").as_double();
     tilt_kp_ = get_parameter("tilt_kp").as_double();
@@ -69,30 +73,54 @@ public:
     iou_threshold_ = get_parameter("iou_threshold").as_double();
     show_window_ = get_parameter("show_window").as_bool();
 
-    // Load YOLO model
+    // Model parameters
+    model_type_ = get_parameter("model_type").as_string();
+    detection_skip_frames_ = get_parameter("detection_skip_frames").as_int();
+
+    // Load detection model
     std::string pkg_share = ament_index_cpp::get_package_share_directory("shooter_control");
-    std::string cfg_path = pkg_share + "/models/yolov4-tiny.cfg";
-    std::string weights_path = pkg_share + "/models/yolov4-tiny.weights";
-    std::string names_path = pkg_share + "/models/coco.names";
 
-    RCLCPP_INFO(get_logger(), "Loading YOLO model from: %s", pkg_share.c_str());
+    if (model_type_ == "mobilenet-ssd") {
+      // Load MobileNet-SSD model
+      std::string prototxt_path = pkg_share + "/models/MobileNetSSD_deploy.prototxt";
+      std::string caffemodel_path = pkg_share + "/models/MobileNetSSD_deploy.caffemodel";
 
-    // Load class names
-    std::ifstream ifs(names_path);
-    std::string line;
-    while (std::getline(ifs, line)) {
-      class_names_.push_back(line);
+      RCLCPP_INFO(get_logger(), "Loading MobileNet-SSD model from: %s", pkg_share.c_str());
+
+      net_ = cv::dnn::readNetFromCaffe(prototxt_path, caffemodel_path);
+      net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
+      net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+
+      // MobileNet-SSD VOC classes (person is index 15)
+      ssd_person_class_id_ = 15;
+
+      RCLCPP_INFO(get_logger(), "MobileNet-SSD model loaded successfully");
+
+    } else {
+      // Load YOLO model (default)
+      std::string cfg_path = pkg_share + "/models/yolov4-tiny.cfg";
+      std::string weights_path = pkg_share + "/models/yolov4-tiny.weights";
+      std::string names_path = pkg_share + "/models/coco.names";
+
+      RCLCPP_INFO(get_logger(), "Loading YOLO model from: %s", pkg_share.c_str());
+
+      // Load class names
+      std::ifstream ifs(names_path);
+      std::string line;
+      while (std::getline(ifs, line)) {
+        class_names_.push_back(line);
+      }
+
+      // Load network
+      net_ = cv::dnn::readNetFromDarknet(cfg_path, weights_path);
+      net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
+      net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+
+      // Get output layer names
+      output_layers_ = net_.getUnconnectedOutLayersNames();
+
+      RCLCPP_INFO(get_logger(), "YOLO model loaded successfully (%zu classes)", class_names_.size());
     }
-
-    // Load network
-    net_ = cv::dnn::readNetFromDarknet(cfg_path, weights_path);
-    net_.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
-    net_.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
-
-    // Get output layer names
-    output_layers_ = net_.getUnconnectedOutLayersNames();
-
-    RCLCPP_INFO(get_logger(), "YOLO model loaded successfully (%zu classes)", class_names_.size());
 
     // Publisher for pan-tilt velocity commands (rad/s)
     pan_tilt_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
@@ -119,8 +147,8 @@ public:
         RCLCPP_ERROR(get_logger(), "Failed to open camera device %d", camera_device_id_);
         throw std::runtime_error("Failed to open camera");
       }
-      cap_.set(cv::CAP_PROP_FRAME_WIDTH, 640);
-      cap_.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
+      cap_.set(cv::CAP_PROP_FRAME_WIDTH, 320);
+      cap_.set(cv::CAP_PROP_FRAME_HEIGHT, 240);
 
       // Timer for camera capture
       timer_ = create_wall_timer(
@@ -201,10 +229,18 @@ private:
     }
   }
 
+  cv::Ptr<cv::TrackerKCF> create_kcf_tracker()
+  {
+    cv::TrackerKCF::Params params;
+    params.detect_thresh = 0.4;  // 検出閾値を下げて高速化
+    params.resize = true;        // 内部リサイズを有効化
+    return cv::TrackerKCF::create(params);
+  }
+
   bool start_tracking(const cv::Mat& frame, const cv::Rect& bbox)
   {
     try {
-      tracker_ = cv::TrackerKCF::create();
+      tracker_ = create_kcf_tracker();
       tracker_->init(frame, bbox);
 
       tracked_bbox_ = bbox;
@@ -308,7 +344,7 @@ private:
 
     // Create blob from image
     cv::Mat blob;
-    cv::dnn::blobFromImage(frame, blob, 1/255.0, cv::Size(320, 320),
+    cv::dnn::blobFromImage(frame, blob, 1/255.0, cv::Size(192, 192),
                            cv::Scalar(0, 0, 0), true, false);
     net_.setInput(blob);
 
@@ -347,7 +383,71 @@ private:
     return result;
   }
 
-  // Async YOLO thread function
+  // MobileNet-SSD detection (faster than YOLO)
+  YoloResult run_ssd_detection(const cv::Mat& frame)
+  {
+    YoloResult result;
+    int width = frame.cols;
+    int height = frame.rows;
+
+    // Create blob from image (MobileNet-SSD uses 300x300 input)
+    cv::Mat blob;
+    cv::dnn::blobFromImage(frame, blob, 0.007843, cv::Size(300, 300),
+                           cv::Scalar(127.5, 127.5, 127.5), false, false);
+    net_.setInput(blob);
+
+    // Forward pass
+    cv::Mat detection = net_.forward();
+
+    // Parse detections
+    // Output shape: [1, 1, N, 7] where each detection is [batch_id, class_id, confidence, x1, y1, x2, y2]
+    cv::Mat detections(detection.size[2], detection.size[3], CV_32F, detection.ptr<float>());
+
+    for (int i = 0; i < detections.rows; i++) {
+      float confidence = detections.at<float>(i, 2);
+      int class_id = static_cast<int>(detections.at<float>(i, 1));
+
+      // Only detect "person" with sufficient confidence
+      if (class_id == ssd_person_class_id_ && confidence > confidence_threshold_) {
+        int x1 = static_cast<int>(detections.at<float>(i, 3) * width);
+        int y1 = static_cast<int>(detections.at<float>(i, 4) * height);
+        int x2 = static_cast<int>(detections.at<float>(i, 5) * width);
+        int y2 = static_cast<int>(detections.at<float>(i, 6) * height);
+
+        // Clamp to frame bounds
+        x1 = std::max(0, std::min(x1, width - 1));
+        y1 = std::max(0, std::min(y1, height - 1));
+        x2 = std::max(0, std::min(x2, width - 1));
+        y2 = std::max(0, std::min(y2, height - 1));
+
+        int w = x2 - x1;
+        int h = y2 - y1;
+
+        if (w > 0 && h > 0) {
+          result.boxes.push_back(cv::Rect(x1, y1, w, h));
+          result.confidences.push_back(confidence);
+        }
+      }
+    }
+
+    // Non-maximum suppression
+    cv::dnn::NMSBoxes(result.boxes, result.confidences,
+                      confidence_threshold_, nms_threshold_, result.indices);
+
+    return result;
+  }
+
+  // Generic detection function that switches between models
+  YoloResult run_detection(const cv::Mat& frame)
+  {
+    if (model_type_ == "mobilenet-ssd") {
+      return run_ssd_detection(frame);
+    } else {
+      return run_yolo_detection(frame);
+    }
+  }
+
+  // Async detection thread function
   void yolo_thread_func()
   {
     while (yolo_thread_running_) {
@@ -368,8 +468,8 @@ private:
         yolo_request_pending_ = false;
       }
 
-      // Run YOLO detection (blocking but in separate thread)
-      YoloResult result = run_yolo_detection(frame_to_process);
+      // Run detection (blocking but in separate thread)
+      YoloResult result = run_detection(frame_to_process);
 
       // Store results
       {
@@ -467,7 +567,7 @@ private:
         // If YOLO detection matches, recreate tracker with corrected bbox
         if (best_iou > iou_threshold_) {
           try {
-            tracker_ = cv::TrackerKCF::create();
+            tracker_ = create_kcf_tracker();
             tracker_->init(frame, best_match);
             tracked_bbox_ = best_match;
             RCLCPP_DEBUG(get_logger(), "Tracker corrected by YOLO (IoU=%.2f)", best_iou);
@@ -495,12 +595,18 @@ private:
       }
 
     } else if (tracking_enabled_ || request_start_tracking_) {
-      // === DETECTING MODE (非同期YOLO検出) ===
+      // === DETECTING MODE (非同期検出 with フレームスキップ) ===
 
-      // 非同期YOLO検出をリクエスト（まだリクエスト中でなければ）
-      if (!detection_in_progress_) {
-        request_async_yolo(frame);
-        detection_in_progress_ = true;
+      // フレームスキップ: 指定フレーム数ごとに検出をリクエスト
+      detection_frame_counter_++;
+      if (detection_frame_counter_ >= detection_skip_frames_) {
+        detection_frame_counter_ = 0;
+
+        // 非同期検出をリクエスト（まだリクエスト中でなければ）
+        if (!detection_in_progress_) {
+          request_async_yolo(frame);
+          detection_in_progress_ = true;
+        }
       }
 
       // 非同期YOLO結果を確認（ノンブロッキング）
@@ -892,6 +998,12 @@ private:
   int yolo_verification_interval_;
   double iou_threshold_;
   bool show_window_;
+
+  // Model parameters
+  std::string model_type_;
+  int detection_skip_frames_;
+  int ssd_person_class_id_ = 15;  // person class in VOC dataset
+  int detection_frame_counter_ = 0;
 
   // Current joint positions
   double current_pan_ = 0.0;
