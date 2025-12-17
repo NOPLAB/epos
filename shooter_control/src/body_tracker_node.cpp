@@ -88,7 +88,7 @@ public:
 
     RCLCPP_INFO(get_logger(), "YOLO model loaded successfully (%zu classes)", class_names_.size());
 
-    // Publisher for pan-tilt position commands
+    // Publisher for pan-tilt velocity commands (rad/s)
     pan_tilt_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
       "/pan_tilt_controller/commands", 10);
 
@@ -448,6 +448,10 @@ private:
     double target_pan = current_pan_;
     double target_tilt = current_tilt_;
 
+    // Velocity commands (rad/s) for pan_tilt_controller
+    double pan_velocity_cmd = 0.0;
+    double tilt_velocity_cmd = 0.0;
+
     if (target_valid) {
       int body_center_x = target_box.x + target_box.width / 2;
       int body_center_y = target_box.y + target_box.height / 2;
@@ -471,6 +475,11 @@ private:
       tilt_i_term = tilt_ki_ * tilt_integral_error_;
       double tilt_delta = -(tilt_p_term + tilt_i_term);
 
+      // Set velocity commands directly (not position)
+      pan_velocity_cmd = pan_delta;
+      tilt_velocity_cmd = tilt_delta;
+
+      // Update target position for display/monitoring only
       target_pan = current_pan_ + pan_delta;
       target_tilt = current_tilt_ + tilt_delta;
       target_pan = std::clamp(target_pan, -pan_limit_, pan_limit_);
@@ -513,11 +522,11 @@ private:
       }
     }
 
-    // Publish pan-tilt command
+    // Publish pan-tilt velocity command (rad/s)
     auto pan_tilt_msg = std_msgs::msg::Float64MultiArray();
     pan_tilt_msg.data.resize(2);
-    pan_tilt_msg.data[0] = target_pan;
-    pan_tilt_msg.data[1] = target_tilt;
+    pan_tilt_msg.data[0] = pan_velocity_cmd;
+    pan_tilt_msg.data[1] = tilt_velocity_cmd;
     pan_tilt_pub_->publish(pan_tilt_msg);
 
     // Calculate base angular velocity
