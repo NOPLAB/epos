@@ -88,10 +88,6 @@ public:
 
     RCLCPP_INFO(get_logger(), "YOLO model loaded successfully (%zu classes)", class_names_.size());
 
-    // Setup VitTrack model path
-    vittrack_model_path_ = pkg_share + "/models/vittrack.onnx";
-    RCLCPP_INFO(get_logger(), "VitTrack model: %s", vittrack_model_path_.c_str());
-
     // Publisher for pan-tilt position commands
     pan_tilt_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
       "/pan_tilt_controller/commands", 10);
@@ -188,10 +184,7 @@ private:
   bool start_tracking(const cv::Mat& frame, const cv::Rect& bbox)
   {
     try {
-      cv::TrackerVit::Params params;
-      params.net = vittrack_model_path_;
-
-      tracker_ = cv::TrackerVit::create(params);
+      tracker_ = cv::TrackerCSRT::create();
       tracker_->init(frame, bbox);
 
       tracked_bbox_ = bbox;
@@ -723,8 +716,8 @@ private:
   std::vector<std::string> class_names_;
   cv::VideoCapture cap_;
 
-  // VitTrack
-  cv::Ptr<cv::TrackerVit> tracker_;
+  // Tracker
+  cv::Ptr<cv::Tracker> tracker_;
   cv::Rect tracked_bbox_;
   bool tracker_initialized_ = false;
   TrackingState tracking_state_ = TrackingState::DETECTING;
@@ -757,7 +750,6 @@ private:
   int yolo_verification_interval_;
   double iou_threshold_;
   bool show_window_;
-  std::string vittrack_model_path_;
 
   // Current joint positions
   double current_pan_ = 0.0;

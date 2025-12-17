@@ -33,18 +33,6 @@ else
     echo "yolo11n.pt already exists, skipping."
 fi
 
-# VitTrack model (required for object tracking)
-# Use OpenCV official model from opencv_zoo (compatible with cv::TrackerVit in OpenCV 4.8+)
-# See: https://github.com/opencv/opencv_zoo/tree/main/models/object_tracking_vittrack
-VITTRACK_URL="https://github.com/opencv/opencv_zoo/raw/main/models/object_tracking_vittrack/object_tracking_vittrack_2023sep.onnx"
-
-if [ ! -f "vittrack.onnx" ]; then
-    echo "Downloading vittrack.onnx from OpenCV Zoo..."
-    curl -L -o vittrack.onnx "${VITTRACK_URL}"
-else
-    echo "vittrack.onnx already exists, skipping."
-fi
-
 echo ""
 echo "Done! Models in: $MODELS_DIR"
-ls -lh "$MODELS_DIR"/*.weights "$MODELS_DIR"/*.pt "$MODELS_DIR"/*.onnx 2>/dev/null || true
+ls -lh "$MODELS_DIR"/*.weights "$MODELS_DIR"/*.pt 2>/dev/null || true
