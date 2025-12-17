@@ -88,11 +88,9 @@ public:
 
     RCLCPP_INFO(get_logger(), "YOLO model loaded successfully (%zu classes)", class_names_.size());
 
-    // Setup NanoTrack model paths
-    nanotrack_backbone_path_ = pkg_share + "/models/nanotrack_backbone_sim.onnx";
-    nanotrack_head_path_ = pkg_share + "/models/nanotrack_head_sim.onnx";
-    RCLCPP_INFO(get_logger(), "NanoTrack models: backbone=%s, head=%s",
-                nanotrack_backbone_path_.c_str(), nanotrack_head_path_.c_str());
+    // Setup VitTrack model path
+    vittrack_model_path_ = pkg_share + "/models/vittrack.onnx";
+    RCLCPP_INFO(get_logger(), "VitTrack model: %s", vittrack_model_path_.c_str());
 
     // Publisher for pan-tilt position commands
     pan_tilt_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
@@ -190,11 +188,10 @@ private:
   bool start_tracking(const cv::Mat& frame, const cv::Rect& bbox)
   {
     try {
-      cv::TrackerNano::Params params;
-      params.backbone = nanotrack_backbone_path_;
-      params.neckhead = nanotrack_head_path_;
+      cv::TrackerVit::Params params;
+      params.net = vittrack_model_path_;
 
-      tracker_ = cv::TrackerNano::create(params);
+      tracker_ = cv::TrackerVit::create(params);
       tracker_->init(frame, bbox);
 
       tracked_bbox_ = bbox;
@@ -726,8 +723,8 @@ private:
   std::vector<std::string> class_names_;
   cv::VideoCapture cap_;
 
-  // NanoTrack
-  cv::Ptr<cv::TrackerNano> tracker_;
+  // VitTrack
+  cv::Ptr<cv::TrackerVit> tracker_;
   cv::Rect tracked_bbox_;
   bool tracker_initialized_ = false;
   TrackingState tracking_state_ = TrackingState::DETECTING;
@@ -760,8 +757,7 @@ private:
   int yolo_verification_interval_;
   double iou_threshold_;
   bool show_window_;
-  std::string nanotrack_backbone_path_;
-  std::string nanotrack_head_path_;
+  std::string vittrack_model_path_;
 
   // Current joint positions
   double current_pan_ = 0.0;
