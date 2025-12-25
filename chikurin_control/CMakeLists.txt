@@ -22,7 +22,29 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/Homing.srv"
 )
 
+# Body tracker library
+add_library(body_tracker_lib
+  src/body_tracker/person_detector.cpp
+  src/body_tracker/target_tracker.cpp
+  src/body_tracker/pan_tilt_controller.cpp
+  src/body_tracker/scan_controller.cpp
+  src/body_tracker/firing_controller.cpp
+  src/body_tracker/tracker_ui.cpp
+)
+target_include_directories(body_tracker_lib PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(body_tracker_lib ${OpenCV_LIBS})
+ament_target_dependencies(body_tracker_lib
+  rclcpp
+  std_srvs
+)
+
+# Body tracker node
 add_executable(body_tracker_node src/body_tracker_node.cpp)
+target_link_libraries(body_tracker_node body_tracker_lib)
 ament_target_dependencies(body_tracker_node
   rclcpp
   ament_index_cpp
@@ -62,6 +84,16 @@ install(TARGETS body_tracker_node pan_tilt_homing_node pan_tilt_joy_node homing_
   DESTINATION lib/${PROJECT_NAME}
 )
 
+install(TARGETS body_tracker_lib
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
+
+install(DIRECTORY include/
+  DESTINATION include
+)
+
 install(PROGRAMS src/servo_trigger_node.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME servo_trigger_node
@@ -79,5 +111,8 @@ if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 endif()
+
+ament_export_include_directories(include)
+ament_export_libraries(body_tracker_lib)
 
 ament_package()
