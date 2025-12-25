@@ -26,19 +26,6 @@ services:
       - /dev:/dev
     environment:
       - EPOS_USB_DEVICE=${EPOS_USB_DEVICE:-USB0}
-      # Pan homing parameters
-      - PAN_HOMING_ACCEL=4000
-      - PAN_SPEED_SWITCH=4000
-      - PAN_SPEED_INDEX=1500
-      - PAN_CENTER_OFFSET=1650000
-      - PAN_CENTER_VELOCITY=50000
-      # Tilt homing parameters
-      - TILT_HOMING_ACCEL=500
-      - TILT_SPEED_SWITCH=250
-      - TILT_SPEED_INDEX=100
-      - TILT_CENTER_OFFSET=110000
-      - TILT_CENTER_VELOCITY=3000
-      - HOMING_TIMEOUT=60000
     profiles:
       - real
     command: ros2 launch chikurin_description robot.launch.py enable_homing:=true

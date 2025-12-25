@@ -1,7 +1,9 @@
 #include "epos/EPOSHardwareInterface.h"
 
+#include <chrono>
 #include <cmath>
 #include <limits>
+#include <thread>
 #include <vector>
 
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
@@ -87,6 +89,56 @@ hardware_interface::CallbackReturn EPOSHardwareInterface::on_init(
         std::stoul(info_.joints[i].parameters.at("position_deceleration")));
     }
 
+    // Get homing parameters (optional)
+    if (info_.joints[i].parameters.count("homing_enabled")) {
+      joints_[i].homing.enabled =
+        (info_.joints[i].parameters.at("homing_enabled") == "true" ||
+         info_.joints[i].parameters.at("homing_enabled") == "1");
+    }
+    if (info_.joints[i].parameters.count("homing_method")) {
+      joints_[i].homing.homing_method = static_cast<signed char>(
+        std::stoi(info_.joints[i].parameters.at("homing_method")));
+    }
+    if (info_.joints[i].parameters.count("homing_acceleration")) {
+      joints_[i].homing.homing_acceleration = static_cast<unsigned int>(
+        std::stoul(info_.joints[i].parameters.at("homing_acceleration")));
+    }
+    if (info_.joints[i].parameters.count("homing_speed_switch")) {
+      joints_[i].homing.speed_switch = static_cast<unsigned int>(
+        std::stoul(info_.joints[i].parameters.at("homing_speed_switch")));
+    }
+    if (info_.joints[i].parameters.count("homing_speed_index")) {
+      joints_[i].homing.speed_index = static_cast<unsigned int>(
+        std::stoul(info_.joints[i].parameters.at("homing_speed_index")));
+    }
+    if (info_.joints[i].parameters.count("homing_center_offset")) {
+      joints_[i].homing.center_offset =
+        std::stoi(info_.joints[i].parameters.at("homing_center_offset"));
+    }
+    if (info_.joints[i].parameters.count("homing_center_velocity")) {
+      joints_[i].homing.center_velocity = static_cast<unsigned int>(
+        std::stoul(info_.joints[i].parameters.at("homing_center_velocity")));
+    }
+    if (info_.joints[i].parameters.count("homing_timeout")) {
+      joints_[i].homing.timeout_ms =
+        std::stoi(info_.joints[i].parameters.at("homing_timeout"));
+    }
+
+    // Get soft limit parameters (optional)
+    if (info_.joints[i].parameters.count("soft_limit_enabled")) {
+      joints_[i].soft_limit.enabled =
+        (info_.joints[i].parameters.at("soft_limit_enabled") == "true" ||
+         info_.joints[i].parameters.at("soft_limit_enabled") == "1");
+    }
+    if (info_.joints[i].parameters.count("soft_limit_min")) {
+      joints_[i].soft_limit.min_position =
+        std::stoi(info_.joints[i].parameters.at("soft_limit_min"));
+    }
+    if (info_.joints[i].parameters.count("soft_limit_max")) {
+      joints_[i].soft_limit.max_position =
+        std::stoi(info_.joints[i].parameters.at("soft_limit_max"));
+    }
+
     // Verify command interfaces (velocity and/or position)
     bool has_velocity_cmd = false;
     bool has_position_cmd = false;
@@ -128,6 +180,25 @@ hardware_interface::CallbackReturn EPOSHardwareInterface::on_init(
       "Joint '%s' configured with node_id=%d, counts_per_rev=%.0f, vel_accel=%u, vel_decel=%u",
       joints_[i].name.c_str(), joints_[i].node_id, joints_[i].counts_per_revolution,
       joints_[i].velocity_acceleration, joints_[i].velocity_deceleration);
+
+    if (joints_[i].homing.enabled) {
+      RCLCPP_INFO(
+        rclcpp::get_logger("EPOSHardwareInterface"),
+        "Joint '%s' homing enabled: method=%d, accel=%u, speed_switch=%u, speed_index=%u, "
+        "center_offset=%d, center_velocity=%u, timeout=%d",
+        joints_[i].name.c_str(), joints_[i].homing.homing_method,
+        joints_[i].homing.homing_acceleration, joints_[i].homing.speed_switch,
+        joints_[i].homing.speed_index, joints_[i].homing.center_offset,
+        joints_[i].homing.center_velocity, joints_[i].homing.timeout_ms);
+    }
+
+    if (joints_[i].soft_limit.enabled) {
+      RCLCPP_INFO(
+        rclcpp::get_logger("EPOSHardwareInterface"),
+        "Joint '%s' soft limits enabled: min=%d, max=%d counts",
+        joints_[i].name.c_str(), joints_[i].soft_limit.min_position,
+        joints_[i].soft_limit.max_position);
+    }
   }
 
   return hardware_interface::CallbackReturn::SUCCESS;
@@ -165,6 +236,7 @@ hardware_interface::CallbackReturn EPOSHardwareInterface::on_activate(
 {
   RCLCPP_INFO(rclcpp::get_logger("EPOSHardwareInterface"), "Activating...");
 
+  // Initialize all joints first
   for (auto & joint : joints_) {
     if (!joint.controller->initialize()) {
       RCLCPP_ERROR(
@@ -172,11 +244,40 @@ hardware_interface::CallbackReturn EPOSHardwareInterface::on_activate(
         "Failed to initialize joint '%s' (node_id=%d)", joint.name.c_str(), joint.node_id);
       return hardware_interface::CallbackReturn::ERROR;
     }
+  }
 
-    joint.position = 0.0;
-    joint.velocity = 0.0;
+  // Perform homing for joints that require it
+  for (auto & joint : joints_) {
+    if (joint.homing.enabled) {
+      RCLCPP_INFO(
+        rclcpp::get_logger("EPOSHardwareInterface"),
+        "Starting homing for joint '%s'...", joint.name.c_str());
+
+      if (!performHoming(joint)) {
+        RCLCPP_ERROR(
+          rclcpp::get_logger("EPOSHardwareInterface"),
+          "Homing failed for joint '%s'", joint.name.c_str());
+        return hardware_interface::CallbackReturn::ERROR;
+      }
+
+      RCLCPP_INFO(
+        rclcpp::get_logger("EPOSHardwareInterface"),
+        "Homing completed for joint '%s'", joint.name.c_str());
+    }
+  }
+
+  // Initialize state variables
+  for (auto & joint : joints_) {
+    // Read current position from hardware
+    int position_counts = 0;
+    int velocity_rpm = 0;
+    joint.controller->getPosition(position_counts);
+    joint.controller->getVelocity(velocity_rpm);
+
+    joint.position = (static_cast<double>(position_counts) / joint.counts_per_revolution) * 2.0 * M_PI;
+    joint.velocity = (static_cast<double>(velocity_rpm) / 60.0) * 2.0 * M_PI;
     joint.velocity_command = 0.0;
-    joint.position_command = 0.0;
+    joint.position_command = joint.position;
     joint.control_mode = ControlMode::NONE;
     joint.target_mode = ControlMode::NONE;
   }
@@ -337,6 +438,8 @@ hardware_interface::return_type EPOSHardwareInterface::read(
     int velocity_rpm = 0;
 
     if (joint.controller->getPosition(position_counts)) {
+      // Store raw encoder counts for soft limit checking
+      joint.position_counts = position_counts;
       // Convert encoder counts to radians (using per-joint counts_per_revolution)
       joint.position = (static_cast<double>(position_counts) / joint.counts_per_revolution) * 2.0 * M_PI;
     }
@@ -357,6 +460,32 @@ hardware_interface::return_type EPOSHardwareInterface::write(
     if (joint.control_mode == ControlMode::VELOCITY) {
       // Convert rad/s to RPM
       long velocity_rpm = static_cast<long>((joint.velocity_command * 60.0) / (2.0 * M_PI));
+
+      // Apply soft limits if enabled
+      if (joint.soft_limit.enabled && velocity_rpm != 0) {
+        const int pos = joint.position_counts;
+        const int min_pos = joint.soft_limit.min_position;
+        const int max_pos = joint.soft_limit.max_position;
+
+        // Block movement toward limits
+        if (pos <= min_pos && velocity_rpm < 0) {
+          // At or beyond min limit, block negative velocity
+          static rclcpp::Clock steady_clock(RCL_STEADY_TIME);
+          RCLCPP_WARN_THROTTLE(
+            rclcpp::get_logger("EPOSHardwareInterface"), steady_clock, 1000,
+            "[%s] Soft limit: blocked negative velocity at pos=%d (min=%d)",
+            joint.name.c_str(), pos, min_pos);
+          velocity_rpm = 0;
+        } else if (pos >= max_pos && velocity_rpm > 0) {
+          // At or beyond max limit, block positive velocity
+          static rclcpp::Clock steady_clock(RCL_STEADY_TIME);
+          RCLCPP_WARN_THROTTLE(
+            rclcpp::get_logger("EPOSHardwareInterface"), steady_clock, 1000,
+            "[%s] Soft limit: blocked positive velocity at pos=%d (max=%d)",
+            joint.name.c_str(), pos, max_pos);
+          velocity_rpm = 0;
+        }
+      }
 
       // Debug log for pan/tilt joints
       if ((joint.name == "pan_joint" || joint.name == "tilt_joint") && velocity_rpm != 0) {
@@ -386,6 +515,119 @@ hardware_interface::return_type EPOSHardwareInterface::write(
   }
 
   return hardware_interface::return_type::OK;
+}
+
+bool EPOSHardwareInterface::performHoming(JointState & joint)
+{
+  return homeToLimitAndCenter(joint);
+}
+
+bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
+{
+  const auto & homing = joint.homing;
+
+  // Set homing parameters
+  if (!joint.controller->setHomingParameter(
+        homing.homing_acceleration,
+        homing.speed_switch,
+        homing.speed_index,
+        homing.center_offset,  // home_offset: offset from limit to center
+        0,                     // current_threshold (not used for limit switch homing)
+        0))                    // home_position
+  {
+    RCLCPP_ERROR(
+      rclcpp::get_logger("EPOSHardwareInterface"),
+      "[%s] Failed to set homing parameters", joint.name.c_str());
+    return false;
+  }
+
+  // Activate homing mode
+  if (!joint.controller->activateHomingMode()) {
+    RCLCPP_ERROR(
+      rclcpp::get_logger("EPOSHardwareInterface"),
+      "[%s] Failed to activate homing mode", joint.name.c_str());
+    return false;
+  }
+
+  // Start homing to limit switch
+  RCLCPP_INFO(
+    rclcpp::get_logger("EPOSHardwareInterface"),
+    "[%s] Moving to limit switch (method=%d)...", joint.name.c_str(), homing.homing_method);
+
+  if (!joint.controller->findHome(homing.homing_method)) {
+    RCLCPP_ERROR(
+      rclcpp::get_logger("EPOSHardwareInterface"),
+      "[%s] Failed to start homing", joint.name.c_str());
+    return false;
+  }
+
+  // Wait for homing to complete
+  if (!joint.controller->waitForHomingAttained(homing.timeout_ms)) {
+    RCLCPP_ERROR(
+      rclcpp::get_logger("EPOSHardwareInterface"),
+      "[%s] Timeout waiting for homing to complete", joint.name.c_str());
+    joint.controller->stopHoming();
+    return false;
+  }
+
+  RCLCPP_INFO(
+    rclcpp::get_logger("EPOSHardwareInterface"),
+    "[%s] Homing attained. Moving to center position (0)...", joint.name.c_str());
+
+  // Move to center position (position 0)
+  if (!joint.controller->activatePositionMode()) {
+    RCLCPP_ERROR(
+      rclcpp::get_logger("EPOSHardwareInterface"),
+      "[%s] Failed to activate position mode", joint.name.c_str());
+    return false;
+  }
+
+  if (!joint.controller->setPositionProfile(
+        homing.center_velocity,
+        homing.homing_acceleration,
+        homing.homing_acceleration))
+  {
+    RCLCPP_ERROR(
+      rclcpp::get_logger("EPOSHardwareInterface"),
+      "[%s] Failed to set position profile", joint.name.c_str());
+    return false;
+  }
+
+  if (!joint.controller->moveToPosition(0, true, true)) {
+    RCLCPP_ERROR(
+      rclcpp::get_logger("EPOSHardwareInterface"),
+      "[%s] Failed to move to center position", joint.name.c_str());
+    return false;
+  }
+
+  // Wait for target reached
+  auto start_time = std::chrono::steady_clock::now();
+  bool target_reached = false;
+
+  while (!target_reached) {
+    if (!joint.controller->isTargetReached(target_reached)) {
+      RCLCPP_ERROR(
+        rclcpp::get_logger("EPOSHardwareInterface"),
+        "[%s] Failed to get movement state", joint.name.c_str());
+      return false;
+    }
+
+    auto elapsed = std::chrono::steady_clock::now() - start_time;
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() > homing.timeout_ms) {
+      RCLCPP_ERROR(
+        rclcpp::get_logger("EPOSHardwareInterface"),
+        "[%s] Timeout waiting for center position", joint.name.c_str());
+      return false;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  }
+
+  RCLCPP_INFO(
+    rclcpp::get_logger("EPOSHardwareInterface"),
+    "[%s] Now at center position", joint.name.c_str());
+
+  return true;
 }
 
 }  // namespace epos

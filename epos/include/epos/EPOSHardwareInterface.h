@@ -13,6 +13,7 @@
 #include "rclcpp_lifecycle/state.hpp"
 
 #include "epos/EPOSController.h"
+#include "epos/Definitions.h"
 
 namespace epos
 {
@@ -63,6 +64,25 @@ private:
     POSITION
   };
 
+  struct HomingConfig
+  {
+    bool enabled{false};
+    signed char homing_method{-1};               // HM_NEGATIVE_LIMIT_SWITCH = -1
+    unsigned int homing_acceleration{5000};      // RPM/s
+    unsigned int speed_switch{3000};             // RPM
+    unsigned int speed_index{500};               // RPM
+    int center_offset{0};                        // Encoder counts from limit to center
+    unsigned int center_velocity{5000};          // RPM for moving to center
+    int timeout_ms{60000};                       // Homing timeout
+  };
+
+  struct SoftLimitConfig
+  {
+    bool enabled{false};
+    int min_position{0};      // Minimum position in encoder counts
+    int max_position{0};      // Maximum position in encoder counts
+  };
+
   struct JointState
   {
     std::string name;
@@ -71,6 +91,7 @@ private:
     double velocity{0.0};
     double velocity_command{0.0};
     double position_command{0.0};
+    int position_counts{0};   // Current position in encoder counts (for limit checking)
     ControlMode control_mode{ControlMode::NONE};
     ControlMode target_mode{ControlMode::NONE};
     std::unique_ptr<EPOSController> controller;
@@ -82,6 +103,10 @@ private:
     unsigned int position_velocity{5000};        // RPM
     unsigned int position_acceleration{10000};   // RPM/s
     unsigned int position_deceleration{10000};   // RPM/s
+    // Homing configuration
+    HomingConfig homing;
+    // Soft limit configuration
+    SoftLimitConfig soft_limit;
   };
 
   std::vector<JointState> joints_;
@@ -95,6 +120,10 @@ private:
 
   // Conversion factors
   double counts_per_revolution_{4096.0};  // Encoder counts per revolution
+
+  // Homing helper methods
+  bool performHoming(JointState & joint);
+  bool homeToLimitAndCenter(JointState & joint);
 };
 
 }  // namespace epos

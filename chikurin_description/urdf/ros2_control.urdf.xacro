@@ -25,22 +25,49 @@
       <state_interface name="position"/>
       <state_interface name="velocity"/>
     </joint>
-    <!-- Velocity control joints (node_id 3, 4) -->
-    <!-- Pan joint: counts_per_revolution calculated from homing offset (1650000 counts ≈ 90°) -->
+    <!-- Pan joint (node_id 3) with optional homing and soft limits -->
+    <!-- counts_per_revolution calculated from homing offset (1650000 counts ≈ 90°) -->
     <joint name="pan_joint">
       <param name="node_id">3</param>
       <param name="counts_per_revolution">6600000</param>
       <param name="velocity_acceleration">30000</param>
       <param name="velocity_deceleration">30000</param>
+      <!-- Homing parameters -->
+      <param name="homing_enabled">$(arg enable_homing)</param>
+      <param name="homing_method">-1</param><!-- HM_NEGATIVE_LIMIT_SWITCH -->
+      <param name="homing_acceleration">7500</param>
+      <param name="homing_speed_switch">4500</param>
+      <param name="homing_speed_index">750</param>
+      <param name="homing_center_offset">1650000</param>
+      <param name="homing_center_velocity">13500</param>
+      <param name="homing_timeout">60000</param>
+      <!-- Soft limits (90% of homing range: ±1650000 * 0.9 = ±1485000) -->
+      <param name="soft_limit_enabled">$(arg enable_homing)</param>
+      <param name="soft_limit_min">-1485000</param>
+      <param name="soft_limit_max">1485000</param>
       <command_interface name="velocity"/>
       <state_interface name="position"/>
       <state_interface name="velocity"/>
     </joint>
+    <!-- Tilt joint (node_id 4) with optional homing and soft limits -->
     <joint name="tilt_joint">
       <param name="node_id">4</param>
       <param name="counts_per_revolution">6600000</param>
       <param name="velocity_acceleration">20000</param>
       <param name="velocity_deceleration">20000</param>
+      <!-- Homing parameters -->
+      <param name="homing_enabled">$(arg enable_homing)</param>
+      <param name="homing_method">-1</param><!-- HM_NEGATIVE_LIMIT_SWITCH -->
+      <param name="homing_acceleration">1250</param>
+      <param name="homing_speed_switch">750</param>
+      <param name="homing_speed_index">125</param>
+      <param name="homing_center_offset">110000</param>
+      <param name="homing_center_velocity">2250</param>
+      <param name="homing_timeout">60000</param>
+      <!-- Soft limits (asymmetric based on mechanical range) -->
+      <param name="soft_limit_enabled">$(arg enable_homing)</param>
+      <param name="soft_limit_min">-99000</param>
+      <param name="soft_limit_max">99000</param>
       <command_interface name="velocity"/>
       <state_interface name="position"/>
       <state_interface name="velocity"/>
