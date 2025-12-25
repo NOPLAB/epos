@@ -1,9 +1,9 @@
 cmake_minimum_required(VERSION 3.8)
-project(shooter_description)
+project(chikurin_description)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY urdf rviz meshes
+install(DIRECTORY urdf rviz meshes config launch worlds
   DESTINATION share/${PROJECT_NAME}
 )
 

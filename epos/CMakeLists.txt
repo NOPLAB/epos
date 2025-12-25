@@ -19,16 +19,21 @@ find_package(hardware_interface REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
-find_package(rosidl_default_generators REQUIRED)
 
-# Generate service interfaces
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "srv/Homing.srv"
+# Build EPOSController as independent library
+add_library(epos_controller SHARED
+  src/EPOSController.cpp
 )
 
-# Build library
+target_include_directories(epos_controller PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
+target_link_libraries(epos_controller EposCmd)
+
+# Build ros2_control hardware interface
 add_library(epos_hardware SHARED
-  src/EPOSController.cpp
   src/EPOSHardwareInterface.cpp
 )
 
@@ -37,7 +42,7 @@ target_include_directories(epos_hardware PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(epos_hardware EposCmd)
+target_link_libraries(epos_hardware epos_controller)
 
 ament_target_dependencies(epos_hardware
   hardware_interface
@@ -48,40 +53,24 @@ ament_target_dependencies(epos_hardware
 
 pluginlib_export_plugin_description_file(hardware_interface epos_hardware.xml)
 
-# Build homing service node
-add_executable(homing_service_node src/homing_service_node.cpp src/EPOSController.cpp)
-target_include_directories(homing_service_node PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
-target_link_libraries(homing_service_node EposCmd)
-ament_target_dependencies(homing_service_node rclcpp)
-rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
-target_link_libraries(homing_service_node "${cpp_typesupport_target}")
-
 # Install headers
 install(DIRECTORY include/
   DESTINATION include
 )
 
-# Install library
-install(TARGETS epos_hardware
-  EXPORT export_epos_hardware
+# Install libraries
+install(TARGETS epos_controller epos_hardware
+  EXPORT export_epos
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
   RUNTIME DESTINATION bin
   INCLUDES DESTINATION include
 )
 
-# Install executables
-install(TARGETS homing_service_node
-  DESTINATION lib/${PROJECT_NAME}
-)
-
 # Export targets
-ament_export_targets(export_epos_hardware HAS_LIBRARY_TARGET)
+ament_export_targets(export_epos HAS_LIBRARY_TARGET)
 ament_export_include_directories(include)
-ament_export_libraries(epos_hardware)
+ament_export_libraries(epos_controller epos_hardware)
 ament_export_dependencies(
   hardware_interface
   pluginlib

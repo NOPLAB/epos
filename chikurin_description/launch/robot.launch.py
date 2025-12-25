@@ -11,12 +11,11 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
-    description_pkg = get_package_share_directory('shooter_description')
-    bringup_pkg = get_package_share_directory('shooter_bringup')
+    pkg_share = get_package_share_directory('chikurin_description')
 
     # Paths
-    xacro_file = os.path.join(description_pkg, 'urdf', 'shooter.urdf.xacro')
-    controllers_file = os.path.join(bringup_pkg, 'config', 'controllers.yaml')
+    xacro_file = os.path.join(pkg_share, 'urdf', 'chikurin.urdf.xacro')
+    controllers_file = os.path.join(pkg_share, 'config', 'controllers.yaml')
 
     # Get USB port from environment variable (default: USB0)
     usb_port = os.environ.get('EPOS_USB_DEVICE', 'USB0')
@@ -58,7 +57,7 @@ def generate_launch_description():
 
     # Pan-Tilt Homing Node (only when homing is enabled)
     pan_tilt_homing_node = Node(
-        package='shooter_control',
+        package='chikurin_control',
         executable='pan_tilt_homing_node',
         name='pan_tilt_homing_node',
         output='screen',

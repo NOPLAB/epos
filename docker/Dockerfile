@@ -110,12 +110,11 @@ WORKDIR /ros2_ws/src
 
 # Copy project sources
 COPY epos /ros2_ws/src/epos
-COPY shooter_description /ros2_ws/src/shooter_description
-COPY shooter_bringup /ros2_ws/src/shooter_bringup
-COPY shooter_control /ros2_ws/src/shooter_control
+COPY chikurin_description /ros2_ws/src/chikurin_description
+COPY chikurin_control /ros2_ws/src/chikurin_control
 
 # Download YOLO models
-RUN /ros2_ws/src/shooter_control/scripts/download_models.sh
+RUN /ros2_ws/src/chikurin_control/scripts/download_models.sh
 
 # Build the workspace
 WORKDIR /ros2_ws

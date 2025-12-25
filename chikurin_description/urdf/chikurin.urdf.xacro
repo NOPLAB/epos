@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="shooter">
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="chikurin">
 
   <!-- Parameters -->
   <xacro:arg name="use_sim" default="false"/>
@@ -172,10 +172,10 @@
 
   <!-- ros2_control configuration (conditional include) -->
   <xacro:if value="${use_sim}">
-    <xacro:include filename="$(find shooter_simulation)/urdf/shooter_gazebo.urdf.xacro"/>
+    <xacro:include filename="$(find chikurin_description)/urdf/gazebo.urdf.xacro"/>
   </xacro:if>
   <xacro:unless value="${use_sim}">
-    <xacro:include filename="$(find shooter_bringup)/urdf/shooter_ros2_control.urdf.xacro"/>
+    <xacro:include filename="$(find chikurin_description)/urdf/ros2_control.urdf.xacro"/>
   </xacro:unless>
 
 </robot>

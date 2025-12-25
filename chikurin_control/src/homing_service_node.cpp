@@ -4,7 +4,7 @@
 #include <map>
 
 #include "rclcpp/rclcpp.hpp"
-#include "epos/srv/homing.hpp"
+#include "chikurin_control/srv/homing.hpp"
 #include "epos/EPOSController.h"
 
 class HomingServiceNode : public rclcpp::Node
@@ -43,7 +43,7 @@ public:
     }
 
     // Create service
-    service_ = this->create_service<epos::srv::Homing>(
+    service_ = this->create_service<chikurin_control::srv::Homing>(
       "~/homing",
       std::bind(&HomingServiceNode::handleHoming, this,
                 std::placeholders::_1, std::placeholders::_2));
@@ -53,8 +53,8 @@ public:
 
 private:
   void handleHoming(
-    const std::shared_ptr<epos::srv::Homing::Request> request,
-    std::shared_ptr<epos::srv::Homing::Response> response)
+    const std::shared_ptr<chikurin_control::srv::Homing::Request> request,
+    std::shared_ptr<chikurin_control::srv::Homing::Response> response)
   {
     std::vector<std::pair<std::string, unsigned short>> joints_to_home;
 
@@ -154,7 +154,7 @@ private:
   std::string port_name_;
   unsigned int baudrate_;
   std::map<std::string, unsigned short> joint_to_node_id_;
-  rclcpp::Service<epos::srv::Homing>::SharedPtr service_;
+  rclcpp::Service<chikurin_control::srv::Homing>::SharedPtr service_;
 };
 
 int main(int argc, char** argv)

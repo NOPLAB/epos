@@ -2,26 +2,25 @@ services:
   # ============================================
   # Real Hardware Services
   # ============================================
-  shooter:
+  chikurin:
     build:
       context: .
       dockerfile: docker/Dockerfile
-    image: shooter-ros-humble
-    container_name: shooter-bringup
+    image: chikurin-ros-humble
+    container_name: chikurin-bringup
     privileged: true
     volumes:
       - /dev:/dev
       - ./epos:/ros2_ws/src/epos
-      - ./shooter_description:/ros2_ws/src/shooter_description
-      - ./shooter_bringup:/ros2_ws/src/shooter_bringup
-      - ./shooter_control:/ros2_ws/src/shooter_control
+      - ./chikurin_description:/ros2_ws/src/chikurin_description
+      - ./chikurin_control:/ros2_ws/src/chikurin_control
     stdin_open: true
     tty: true
     command: bash
 
-  shooter-run:
-    image: shooter-ros-humble
-    container_name: shooter-bringup-run
+  chikurin-run:
+    image: chikurin-ros-humble
+    container_name: chikurin-bringup-run
     privileged: true
     volumes:
       - /dev:/dev
@@ -42,11 +41,11 @@ services:
       - HOMING_TIMEOUT=60000
     profiles:
       - real
-    command: ros2 launch shooter_bringup shooter.launch.py enable_homing:=true
+    command: ros2 launch chikurin_description robot.launch.py enable_homing:=true
 
   keyboard:
-    image: shooter-ros-humble
-    container_name: shooter-teleop-keyboard
+    image: chikurin-ros-humble
+    container_name: chikurin-teleop-keyboard
     stdin_open: true
     tty: true
     profiles:
@@ -56,8 +55,8 @@ services:
       --ros-args -r /cmd_vel:=/diff_drive_controller/cmd_vel_unstamped
 
   joystick:
-    image: shooter-ros-humble
-    container_name: shooter-teleop-joystick
+    image: chikurin-ros-humble
+    container_name: chikurin-teleop-joystick
     privileged: true
     volumes:
       - /dev/input:/dev/input
@@ -76,13 +75,13 @@ services:
       joy_vel:=/diff_drive_controller/cmd_vel_unstamped
       config_filepath:=/config/joystick.config.yaml
       device_id:=$${JOY_DEV_ID:-0} &
-      ros2 run shooter_control pan_tilt_joy_node --ros-args
+      ros2 run chikurin_control pan_tilt_joy_node --ros-args
       -p pan_axis:=3
       -p tilt_axis:=4
       -p pan_velocity:=2000.0
       -p tilt_velocity:=-300.0
       -p shooter_speed_rpm:=-10000.0 &
-      (ros2 run shooter_control servo_trigger_node --ros-args
+      (ros2 run chikurin_control servo_trigger_node --ros-args
       -p pwm_chip:=$${PWM_CHIP:-0}
       -p pwm_channel:=$${PWM_CHANNEL:-0}
       -p trigger_button:=5
@@ -92,8 +91,8 @@ services:
       wait"
 
   body_tracker:
-    image: shooter-ros-humble
-    container_name: shooter-body-tracker
+    image: chikurin-ros-humble
+    container_name: chikurin-body-tracker
     privileged: true
     volumes:
       - /dev:/dev
@@ -144,7 +143,7 @@ services:
     profiles:
       - body
     command: >
-      bash -c "(ros2 run shooter_control servo_trigger_node --ros-args
+      bash -c "(ros2 run chikurin_control servo_trigger_node --ros-args
       -p pwm_chip:=$${PWM_CHIP:-0}
       -p pwm_channel:=$${PWM_CHANNEL:-0}
       -p trigger_button:=5
@@ -153,7 +152,7 @@ services:
       -p trigger_angle_deg:=$${SERVO_TRIGGER_DEG:-180.0} || echo 'servo_trigger_node failed') &
       ros2 run joy joy_node --ros-args -p device_id:=$${JOY_DEV_ID:-0} &
       sleep 2 &&
-      ros2 launch shooter_control body_tracker.launch.py
+      ros2 launch chikurin_control body_tracker.launch.py
       camera_device_id:=$${CAMERA_DEVICE_ID:-0}
       tracking_button_index:=$${TRACKING_BUTTON:-0}
       show_window:=$${SHOW_WINDOW:-false}
@@ -191,11 +190,10 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.sim
-    image: shooter-sim
-    container_name: shooter-simulation
+    image: chikurin-sim
+    container_name: chikurin-simulation
     volumes:
-      - ./shooter_description:/ros2_ws/src/shooter_description
-      - ./shooter_simulation:/ros2_ws/src/shooter_simulation
+      - ./chikurin_description:/ros2_ws/src/chikurin_description
       - /tmp/.X11-unix:/tmp/.X11-unix
     environment:
       - DISPLAY=${DISPLAY}
@@ -210,8 +208,8 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.sim
-    image: shooter-sim
-    container_name: shooter-simulation-run
+    image: chikurin-sim
+    container_name: chikurin-simulation-run
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
     environment:
@@ -219,8 +217,8 @@ services:
       - QT_X11_NO_MITSHM=1
     profiles:
       - sim
-    command: ros2 launch shooter_simulation sim.launch.py
+    command: ros2 launch chikurin_description sim.launch.py
 
 networks:
   default:
-    name: shooter
+    name: chikurin

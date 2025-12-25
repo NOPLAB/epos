@@ -3,3 +3,8 @@
 /EPOS_Linux_Library
 
 /.cache
+
+/build
+/install
+/log
+

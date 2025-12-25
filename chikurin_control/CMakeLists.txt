@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(shooter_control)
+project(chikurin_control)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -15,6 +15,12 @@ find_package(std_srvs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(epos REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+
+# Generate service interfaces
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "srv/Homing.srv"
+)
 
 add_executable(body_tracker_node src/body_tracker_node.cpp)
 ament_target_dependencies(body_tracker_node
@@ -43,7 +49,16 @@ ament_target_dependencies(pan_tilt_joy_node
   std_msgs
 )
 
-install(TARGETS body_tracker_node pan_tilt_homing_node pan_tilt_joy_node
+# Build homing service node
+add_executable(homing_service_node src/homing_service_node.cpp)
+ament_target_dependencies(homing_service_node
+  rclcpp
+  epos
+)
+rosidl_get_typesupport_target(cpp_typesupport_target ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(homing_service_node "${cpp_typesupport_target}")
+
+install(TARGETS body_tracker_node pan_tilt_homing_node pan_tilt_joy_node homing_service_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

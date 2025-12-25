@@ -1,13 +1,14 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>shooter_control</name>
+  <name>chikurin_control</name>
   <version>0.0.1</version>
-  <description>Control nodes for the shooter robot (body tracker with YOLO)</description>
+  <description>Control nodes for chikurin robot (body tracker, pan-tilt control, homing service)</description>
   <maintainer email="noplab90@gmail.com">nop</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
 
   <depend>rclcpp</depend>
   <depend>ament_index_cpp</depend>
@@ -17,6 +18,8 @@
   <depend>std_srvs</depend>
   <depend>cv_bridge</depend>
   <depend>epos</depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

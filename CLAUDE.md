@@ -9,6 +9,17 @@ Maxon EPOS4モーターコントローラ用の`ros2_control`ハードウェア�
 
 **通信方式:** USB経由でEPOS4ハードウェアデバイスとCANopenプロトコルで通信
 
+## パッケージ構成
+
+```
+chikurin/
+├── epos/                    # 独立ライブラリ (ros2_control HW IF + C++ラッパー)
+├── chikurin_description/    # URDF + 起動 + シミュレーション統合
+├── chikurin_control/        # 制御ノード + ホーミングサービス
+├── EPOS_Linux_Library/      # Maxonベンダーライブラリ（変更不要）
+└── docker/                  # Docker設定（変更不要）
+```
+
 ## アーキテクチャ
 
 ### レイヤー構成
@@ -26,24 +37,26 @@ USB → EPOS4ハードウェア
 
 ### 主要コンポーネント
 
-**EPOSHardwareInterface** (`epos/include/epos/EPOSHardwareInterface.h`)
-- ros2_control用の`hardware_interface::SystemInterface`を実装
-- 複数のジョイントを管理し、各ジョイントが独自のEPOSControllerインスタンスを持つ
-- 速度コマンドと位置/速度状態インターフェースをエクスポート
-- URDFの`<ros2_control>`タグで設定（`shooter/urdf/shooter.urdf.xacro`参照）
+**eposパッケージ**
+- `EPOSController` (`epos/include/epos/EPOSController.h`) - Maxon EPOS4 API用のC++ラッパー
+- `EPOSHardwareInterface` (`epos/include/epos/EPOSHardwareInterface.h`) - ros2_control SystemInterfaceプラグイン
+- `Definitions.h` - ベンダー提供のC APIヘッダ
 
-**EPOSController** (`epos/include/epos/EPOSController.h`)
-- Maxon EPOS4 API用の低レベルファサード
-- デバイス初期化、モード有効化、モーションコマンドを処理
-- コンストラクタのデフォルト値: EPOS4デバイス、USB0ポート、1 Mbpsボーレート、ノードID 1
-- 全パブリックメソッドは`bool`を返し、エラーは`getLastErrorCode()`で取得
+**chikurin_descriptionパッケージ**
+- `urdf/chikurin.urdf.xacro` - ロボット本体の定義
+- `urdf/ros2_control.urdf.xacro` - 実機用ros2_control設定
+- `urdf/gazebo.urdf.xacro` - シミュレーション用設定
+- `launch/robot.launch.py` - 実機起動
+- `launch/sim.launch.py` - シミュレーション起動
+- `config/controllers.yaml` - 実機用コントローラ設定
+- `config/sim_controllers.yaml` - シミュレーション用コントローラ設定
 
-**BodyTrackerNode** (`shooter/src/body_tracker_node.cpp`)
-- HOG記述子を使用したOpenCVベースの人体検出
-- 追跡用PIコントローラ（`/diff_drive_controller/cmd_vel_unstamped`にパブリッシュ）
-- 直接カメラデバイスまたはROS画像トピックを使用可能
-
-**Definitions.h** - ベンダー提供のC APIヘッダ（CANopen/USB通信用の100以上の関数）
+**chikurin_controlパッケージ**
+- `body_tracker_node` - YOLO/OpenCV人体検出・追跡
+- `pan_tilt_homing_node` - パンチルトホーミング
+- `pan_tilt_joy_node` - ジョイスティック制御
+- `homing_service_node` - 汎用ホーミングサービス
+- `srv/Homing.srv` - ホーミングサービス定義
 
 ## URDF設定
 
@@ -91,6 +104,20 @@ USB → EPOS4ハードウェア
 - `isTargetReached()`
 
 **単位:** 位置はクワッドカウント、速度はRPM、加速度はRPM/s
+
+## 起動方法
+
+**実機起動:**
+```bash
+ros2 launch chikurin_description robot.launch.py
+# ホーミング有効:
+ros2 launch chikurin_description robot.launch.py enable_homing:=true
+```
+
+**シミュレーション起動:**
+```bash
+ros2 launch chikurin_description sim.launch.py
+```
 
 ## 開発メモ
 

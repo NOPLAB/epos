@@ -15,13 +15,12 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
-    description_pkg = get_package_share_directory('shooter_description')
-    simulation_pkg = get_package_share_directory('shooter_simulation')
+    pkg_share = get_package_share_directory('chikurin_description')
     pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
 
     # Paths
-    xacro_file = os.path.join(description_pkg, 'urdf', 'shooter.urdf.xacro')
-    world_file = os.path.join(simulation_pkg, 'worlds', 'empty.sdf')
+    xacro_file = os.path.join(pkg_share, 'urdf', 'chikurin.urdf.xacro')
+    world_file = os.path.join(pkg_share, 'worlds', 'empty.sdf')
 
     # Launch arguments
     use_sim_time = LaunchConfiguration('use_sim_time', default='true')
@@ -58,7 +57,7 @@ def generate_launch_description():
         package='ros_gz_sim',
         executable='create',
         arguments=[
-            '-name', 'shooter',
+            '-name', 'chikurin',
             '-topic', 'robot_description',
             '-x', '0.0',
             '-y', '0.0',
