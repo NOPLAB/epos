@@ -1,4 +1,5 @@
 #include <cmath>
+#include <vector>
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/joy.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
@@ -15,7 +16,7 @@ public:
     declare_parameter("tilt_velocity", 1.0);    // Max velocity in rad/s at full deflection
     declare_parameter("deadzone", 0.1);         // Joystick deadzone
     declare_parameter("shooter_trigger_axis", 5);  // RT trigger axis
-    declare_parameter("shooter_speed_rpm", 10000.0); // Shooter speed in RPM
+    declare_parameter("dpad_vertical_axis", 7);    // D-Pad vertical axis (up=1.0, down=-1.0)
 
     // Get parameters
     pan_axis_ = get_parameter("pan_axis").as_int();
@@ -24,9 +25,12 @@ public:
     tilt_velocity_ = get_parameter("tilt_velocity").as_double();
     deadzone_ = get_parameter("deadzone").as_double();
     shooter_trigger_axis_ = get_parameter("shooter_trigger_axis").as_int();
-    shooter_speed_rpm_ = get_parameter("shooter_speed_rpm").as_double();
-    // Convert RPM to rad/s for ros2_control
-    shooter_speed_rad_s_ = shooter_speed_rpm_ * 2.0 * M_PI / 60.0;
+    dpad_vertical_axis_ = get_parameter("dpad_vertical_axis").as_int();
+
+    // Initialize shooter speed levels (RPM)
+    shooter_speed_levels_ = {10000.0, 20000.0, 30000.0};
+    current_speed_level_ = 0;  // Start at level 0 (10000 RPM)
+    updateShooterSpeed();
 
     // Create publishers
     command_pub_ = create_publisher<std_msgs::msg::Float64MultiArray>(
@@ -42,7 +46,8 @@ public:
     RCLCPP_INFO(get_logger(), "Pan-Tilt Joy Node initialized (velocity control)");
     RCLCPP_INFO(get_logger(), "  Pan axis: %d, Tilt axis: %d", pan_axis_, tilt_axis_);
     RCLCPP_INFO(get_logger(), "  Pan velocity: %.3f rad/s, Tilt velocity: %.3f rad/s", pan_velocity_, tilt_velocity_);
-    RCLCPP_INFO(get_logger(), "  Shooter trigger axis: %d, speed: %.0f RPM", shooter_trigger_axis_, shooter_speed_rpm_);
+    RCLCPP_INFO(get_logger(), "  Shooter trigger axis: %d, D-Pad vertical axis: %d", shooter_trigger_axis_, dpad_vertical_axis_);
+    RCLCPP_INFO(get_logger(), "  Shooter speed levels: 10000, 20000, 30000 RPM (current: %.0f RPM)", shooter_speed_levels_[current_speed_level_]);
   }
 
 private:
@@ -86,6 +91,35 @@ private:
         "Publishing cmd: pan=%.3f, tilt=%.3f rad/s", pan_vel, tilt_vel);
     }
 
+    // Handle D-Pad vertical axis for shooter speed level change
+    if (static_cast<size_t>(dpad_vertical_axis_) < msg->axes.size()) {
+      double dpad_value = msg->axes[dpad_vertical_axis_];
+
+      // Up pressed (value > 0.5) and was not pressed before
+      if (dpad_value > 0.5 && !dpad_up_pressed_) {
+        dpad_up_pressed_ = true;
+        if (current_speed_level_ < shooter_speed_levels_.size() - 1) {
+          current_speed_level_++;
+          updateShooterSpeed();
+          RCLCPP_INFO(get_logger(), "Shooter speed level UP: %.0f RPM", shooter_speed_levels_[current_speed_level_]);
+        }
+      } else if (dpad_value <= 0.5) {
+        dpad_up_pressed_ = false;
+      }
+
+      // Down pressed (value < -0.5) and was not pressed before
+      if (dpad_value < -0.5 && !dpad_down_pressed_) {
+        dpad_down_pressed_ = true;
+        if (current_speed_level_ > 0) {
+          current_speed_level_--;
+          updateShooterSpeed();
+          RCLCPP_INFO(get_logger(), "Shooter speed level DOWN: %.0f RPM", shooter_speed_levels_[current_speed_level_]);
+        }
+      } else if (dpad_value >= -0.5) {
+        dpad_down_pressed_ = false;
+      }
+    }
+
     // Handle shooter trigger (RT button)
     // RT axis: 1.0 = not pressed, -1.0 = fully pressed
     if (static_cast<size_t>(shooter_trigger_axis_) < msg->axes.size()) {
@@ -101,6 +135,12 @@ private:
     }
   }
 
+  void updateShooterSpeed()
+  {
+    shooter_speed_rpm_ = shooter_speed_levels_[current_speed_level_];
+    shooter_speed_rad_s_ = shooter_speed_rpm_ * 2.0 * M_PI / 60.0;
+  }
+
   // Parameters
   int pan_axis_;
   int tilt_axis_;
@@ -108,8 +148,17 @@ private:
   double tilt_velocity_;
   double deadzone_;
   int shooter_trigger_axis_;
+  int dpad_vertical_axis_;
+
+  // Shooter speed levels
+  std::vector<double> shooter_speed_levels_;
+  size_t current_speed_level_;
   double shooter_speed_rpm_;
   double shooter_speed_rad_s_;
+
+  // D-Pad state tracking
+  bool dpad_up_pressed_ = false;
+  bool dpad_down_pressed_ = false;
 
   // ROS
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr command_pub_;
