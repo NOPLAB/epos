@@ -89,7 +89,7 @@ services:
       - ./docker/joystick.config.yaml:/config/joystick.config.yaml:ro
     environment:
       - UDP_HOST=${UDP_HOST:-0.0.0.0}
-      - UDP_PORT=${UDP_PORT:-5005}
+      - UDP_PORT=${UDP_PORT:-12345}
       - PWM_CHIP=${PWM_CHIP:-0}
       - PWM_CHANNEL=${PWM_CHANNEL:-0}
       - SERVO_IDLE_DEG=${SERVO_IDLE_DEG:-0.0}
@@ -99,7 +99,7 @@ services:
     command: >
       bash -c "ros2 run teleop_udp udp_receiver_node --ros-args
       -p host:=$${UDP_HOST:-0.0.0.0}
-      -p port:=$${UDP_PORT:-5005} &
+      -p port:=$${UDP_PORT:-12345} &
       ros2 launch teleop_twist_joy teleop-launch.py
       joy_vel:=/diff_drive_controller/cmd_vel_unstamped
       config_filepath:=/config/joystick.config.yaml &
