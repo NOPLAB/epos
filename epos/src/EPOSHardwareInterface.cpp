@@ -645,7 +645,7 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   // Wait for target reached
-  auto start_time = std::chrono::steady_clock::now();
+  auto move_start_time = std::chrono::steady_clock::now();
   bool target_reached = false;
 
   while (!target_reached) {
@@ -656,7 +656,7 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
       return false;
     }
 
-    auto elapsed = std::chrono::steady_clock::now() - start_time;
+    auto elapsed = std::chrono::steady_clock::now() - move_start_time;
     if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() > homing.timeout_ms) {
       RCLCPP_ERROR(
         rclcpp::get_logger("EPOSHardwareInterface"),
