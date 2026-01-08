@@ -526,12 +526,12 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
 {
   const auto & homing = joint.homing;
 
-  // Set homing parameters (home_offset=0: limit switch position becomes position 0)
+  // Set homing parameters (home_offset = center_offset so position 0 is at center)
   if (!joint.controller->setHomingParameter(
         homing.homing_acceleration,
         homing.speed_switch,
         homing.speed_index,
-        0,                     // home_offset: 0 so limit switch = position 0
+        homing.center_offset,  // home_offset: offset from limit switch to center
         0,                     // current_threshold (not used for limit switch homing)
         0))                    // home_position
   {
@@ -572,10 +572,9 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
 
   RCLCPP_INFO(
     rclcpp::get_logger("EPOSHardwareInterface"),
-    "[%s] Homing attained at limit switch. Moving to center (%d)...",
-    joint.name.c_str(), homing.center_offset);
+    "[%s] Homing attained. Moving to center (position 0)...", joint.name.c_str());
 
-  // Move to center position using position mode
+  // Move to center position (position 0, since home_offset was set to center_offset)
   if (!joint.controller->activatePositionMode()) {
     RCLCPP_ERROR(
       rclcpp::get_logger("EPOSHardwareInterface"),
@@ -594,7 +593,7 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
     return false;
   }
 
-  if (!joint.controller->moveToPosition(homing.center_offset, true, true)) {
+  if (!joint.controller->moveToPosition(0, true, true)) {
     RCLCPP_ERROR(
       rclcpp::get_logger("EPOSHardwareInterface"),
       "[%s] Failed to move to center position", joint.name.c_str());
