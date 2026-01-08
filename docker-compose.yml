@@ -27,7 +27,8 @@ services:
     environment:
       - EPOS_USB_DEVICE=${EPOS_USB_DEVICE:-USB0}
     profiles:
-      - real
+      - joystick
+      - keyboard
     command: ros2 launch chikurin_description robot.launch.py enable_homing:=true
 
   keyboard:
