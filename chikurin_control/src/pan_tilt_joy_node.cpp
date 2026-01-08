@@ -16,6 +16,7 @@ public:
     declare_parameter("tilt_velocity", 1.0);    // Max velocity in rad/s at full deflection
     declare_parameter("deadzone", 0.1);         // Joystick deadzone
     declare_parameter("shooter_trigger_axis", 5);  // RT trigger axis
+    declare_parameter("shooter_button", -1);          // Button index for shooter (-1 = use axis)
     declare_parameter("dpad_vertical_axis", 7);    // D-Pad vertical axis (up=1.0, down=-1.0)
 
     // Get parameters
@@ -25,6 +26,7 @@ public:
     tilt_velocity_ = get_parameter("tilt_velocity").as_double();
     deadzone_ = get_parameter("deadzone").as_double();
     shooter_trigger_axis_ = get_parameter("shooter_trigger_axis").as_int();
+    shooter_button_ = get_parameter("shooter_button").as_int();
     dpad_vertical_axis_ = get_parameter("dpad_vertical_axis").as_int();
 
     // Initialize shooter speed levels (RPM)
@@ -120,19 +122,28 @@ private:
       }
     }
 
-    // Handle shooter trigger (RT button)
-    // RT axis: 1.0 = not pressed, -1.0 = fully pressed
-    if (static_cast<size_t>(shooter_trigger_axis_) < msg->axes.size()) {
-      double trigger_value = msg->axes[shooter_trigger_axis_];
-      double shooter_velocity = 0.0;
-      // Trigger is pressed when value < 0.5 (axis goes from 1.0 to -1.0)
-      if (trigger_value < 0.5) {
-        shooter_velocity = shooter_speed_rad_s_;
-      }
-      auto shooter_cmd = std_msgs::msg::Float64MultiArray();
-      shooter_cmd.data = {shooter_velocity};
-      shooter_pub_->publish(shooter_cmd);
+    // Handle shooter trigger (button or axis)
+    double shooter_velocity = 0.0;
+    bool shooter_triggered = false;
+
+    // Check button first if configured (shooter_button_ >= 0)
+    if (shooter_button_ >= 0 && static_cast<size_t>(shooter_button_) < msg->buttons.size()) {
+      shooter_triggered = (msg->buttons[shooter_button_] == 1);
     }
+    // Fall back to axis if button not configured or not available
+    else if (static_cast<size_t>(shooter_trigger_axis_) < msg->axes.size()) {
+      double trigger_value = msg->axes[shooter_trigger_axis_];
+      // RT axis: 1.0 = not pressed, -1.0 = fully pressed
+      // Trigger is pressed when value < 0.5 (axis goes from 1.0 to -1.0)
+      shooter_triggered = (trigger_value < 0.5);
+    }
+
+    if (shooter_triggered) {
+      shooter_velocity = shooter_speed_rad_s_;
+    }
+    auto shooter_cmd = std_msgs::msg::Float64MultiArray();
+    shooter_cmd.data = {shooter_velocity};
+    shooter_pub_->publish(shooter_cmd);
   }
 
   void updateShooterSpeed()
@@ -148,6 +159,7 @@ private:
   double tilt_velocity_;
   double deadzone_;
   int shooter_trigger_axis_;
+  int shooter_button_;
   int dpad_vertical_axis_;
 
   // Shooter speed levels

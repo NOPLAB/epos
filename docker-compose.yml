@@ -108,7 +108,7 @@ services:
       -p tilt_axis:=4
       -p pan_velocity:=2000.0
       -p tilt_velocity:=-300.0
-      -p shooter_speed_rpm:=-10000.0 &
+      -p shooter_button:=15 &
       (ros2 run chikurin_control servo_trigger_node --ros-args
       -p pwm_chip:=$${PWM_CHIP:-0}
       -p pwm_channel:=$${PWM_CHANNEL:-0}
