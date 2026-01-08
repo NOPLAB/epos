@@ -565,15 +565,40 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
     return false;
   }
 
-  // Wait for homing to actually start (motor should begin moving)
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-  // Poll homing state until attained or timeout
-  auto start_time = std::chrono::steady_clock::now();
+  // Check if homing actually started (not just returning stale state)
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
   bool homing_attained = false;
   bool homing_error = false;
 
+  if (!joint.controller->getHomingState(homing_attained, homing_error)) {
+    RCLCPP_ERROR(
+      rclcpp::get_logger("EPOSHardwareInterface"),
+      "[%s] Failed to get initial homing state", joint.name.c_str());
+    return false;
+  }
+
+  // If already attained immediately after findHome, this is stale state - try again
+  if (homing_attained) {
+    RCLCPP_WARN(
+      rclcpp::get_logger("EPOSHardwareInterface"),
+      "[%s] Stale homing state detected, retrying findHome...", joint.name.c_str());
+
+    // Call findHome again to actually start the homing operation
+    if (!joint.controller->findHome(homing.homing_method)) {
+      RCLCPP_ERROR(
+        rclcpp::get_logger("EPOSHardwareInterface"),
+        "[%s] Failed to restart homing", joint.name.c_str());
+      return false;
+    }
+    homing_attained = false;
+  }
+
+  // Poll homing state until attained or timeout
+  auto start_time = std::chrono::steady_clock::now();
+
   while (!homing_attained) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
     if (!joint.controller->getHomingState(homing_attained, homing_error)) {
       RCLCPP_ERROR(
         rclcpp::get_logger("EPOSHardwareInterface"),
@@ -598,8 +623,6 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
       joint.controller->stopHoming();
       return false;
     }
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
   // Get current position after homing
