@@ -67,7 +67,7 @@ private:
   struct HomingConfig
   {
     bool enabled{false};
-    signed char homing_method{-1};               // HM_NEGATIVE_LIMIT_SWITCH = -1
+    signed char homing_method{17};               // HM_NEGATIVE_LIMIT_SWITCH = 17
     unsigned int homing_acceleration{5000};      // RPM/s
     unsigned int speed_switch{3000};             // RPM
     unsigned int speed_index{500};               // RPM

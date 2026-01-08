@@ -34,7 +34,7 @@
       <param name="velocity_deceleration">30000</param>
       <!-- Homing parameters -->
       <param name="homing_enabled">$(arg enable_homing)</param>
-      <param name="homing_method">-1</param><!-- HM_NEGATIVE_LIMIT_SWITCH -->
+      <param name="homing_method">17</param><!-- HM_NEGATIVE_LIMIT_SWITCH (17) -->
       <param name="homing_acceleration">7500</param>
       <param name="homing_speed_switch">4500</param>
       <param name="homing_speed_index">750</param>
@@ -57,7 +57,7 @@
       <param name="velocity_deceleration">20000</param>
       <!-- Homing parameters -->
       <param name="homing_enabled">$(arg enable_homing)</param>
-      <param name="homing_method">-1</param><!-- HM_NEGATIVE_LIMIT_SWITCH -->
+      <param name="homing_method">17</param><!-- HM_NEGATIVE_LIMIT_SWITCH (17) -->
       <param name="homing_acceleration">1250</param>
       <param name="homing_speed_switch">750</param>
       <param name="homing_speed_index">125</param>
