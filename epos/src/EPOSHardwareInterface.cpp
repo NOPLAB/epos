@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <future>
 #include <limits>
 #include <thread>
 #include <vector>
@@ -246,24 +247,41 @@ hardware_interface::CallbackReturn EPOSHardwareInterface::on_activate(
     }
   }
 
-  // Perform homing for joints that require it
+  // Perform homing for joints that require it (in parallel)
+  std::vector<std::future<bool>> homing_futures;
+  std::vector<std::string> homing_joint_names;
+
   for (auto & joint : joints_) {
     if (joint.homing.enabled) {
       RCLCPP_INFO(
         rclcpp::get_logger("EPOSHardwareInterface"),
         "Starting homing for joint '%s'...", joint.name.c_str());
 
-      if (!performHoming(joint)) {
-        RCLCPP_ERROR(
-          rclcpp::get_logger("EPOSHardwareInterface"),
-          "Homing failed for joint '%s'", joint.name.c_str());
-        return hardware_interface::CallbackReturn::ERROR;
-      }
+      homing_joint_names.push_back(joint.name);
+      homing_futures.push_back(std::async(std::launch::async, [this, &joint]() {
+        return performHoming(joint);
+      }));
+    }
+  }
 
+  // Wait for all homing operations to complete
+  bool all_homing_success = true;
+  for (size_t i = 0; i < homing_futures.size(); ++i) {
+    bool success = homing_futures[i].get();
+    if (success) {
       RCLCPP_INFO(
         rclcpp::get_logger("EPOSHardwareInterface"),
-        "Homing completed for joint '%s'", joint.name.c_str());
+        "Homing completed for joint '%s'", homing_joint_names[i].c_str());
+    } else {
+      RCLCPP_ERROR(
+        rclcpp::get_logger("EPOSHardwareInterface"),
+        "Homing failed for joint '%s'", homing_joint_names[i].c_str());
+      all_homing_success = false;
     }
+  }
+
+  if (!all_homing_success) {
+    return hardware_interface::CallbackReturn::ERROR;
   }
 
   // Initialize state variables
