@@ -112,6 +112,7 @@ WORKDIR /ros2_ws/src
 COPY epos /ros2_ws/src/epos
 COPY chikurin_description /ros2_ws/src/chikurin_description
 COPY chikurin_control /ros2_ws/src/chikurin_control
+COPY teleop_udp /ros2_ws/src/teleop_udp
 
 # Download YOLO models
 RUN /ros2_ws/src/chikurin_control/scripts/download_models.sh
