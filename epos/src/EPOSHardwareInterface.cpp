@@ -541,6 +541,10 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
     return false;
   }
 
+  // Switch to velocity mode first to clear any previous homing state
+  joint.controller->activateVelocityMode();
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
   // Activate homing mode
   if (!joint.controller->activateHomingMode()) {
     RCLCPP_ERROR(
@@ -548,9 +552,6 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
       "[%s] Failed to activate homing mode", joint.name.c_str());
     return false;
   }
-
-  // Clear previous homing state by stopping any existing homing operation
-  joint.controller->stopHoming();
 
   // Start homing to limit switch
   RCLCPP_INFO(
@@ -564,13 +565,41 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
     return false;
   }
 
-  // Wait for homing to complete
-  if (!joint.controller->waitForHomingAttained(homing.timeout_ms)) {
-    RCLCPP_ERROR(
-      rclcpp::get_logger("EPOSHardwareInterface"),
-      "[%s] Timeout waiting for homing to complete", joint.name.c_str());
-    joint.controller->stopHoming();
-    return false;
+  // Wait for homing to actually start (motor should begin moving)
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+  // Poll homing state until attained or timeout
+  auto start_time = std::chrono::steady_clock::now();
+  bool homing_attained = false;
+  bool homing_error = false;
+
+  while (!homing_attained) {
+    if (!joint.controller->getHomingState(homing_attained, homing_error)) {
+      RCLCPP_ERROR(
+        rclcpp::get_logger("EPOSHardwareInterface"),
+        "[%s] Failed to get homing state", joint.name.c_str());
+      joint.controller->stopHoming();
+      return false;
+    }
+
+    if (homing_error) {
+      RCLCPP_ERROR(
+        rclcpp::get_logger("EPOSHardwareInterface"),
+        "[%s] Homing error detected", joint.name.c_str());
+      joint.controller->stopHoming();
+      return false;
+    }
+
+    auto elapsed = std::chrono::steady_clock::now() - start_time;
+    if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() > homing.timeout_ms) {
+      RCLCPP_ERROR(
+        rclcpp::get_logger("EPOSHardwareInterface"),
+        "[%s] Timeout waiting for homing to complete", joint.name.c_str());
+      joint.controller->stopHoming();
+      return false;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
   // Get current position after homing
