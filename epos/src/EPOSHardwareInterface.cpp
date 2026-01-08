@@ -549,6 +549,9 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
     return false;
   }
 
+  // Clear previous homing state by stopping any existing homing operation
+  joint.controller->stopHoming();
+
   // Start homing to limit switch
   RCLCPP_INFO(
     rclcpp::get_logger("EPOSHardwareInterface"),
@@ -570,10 +573,13 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
     return false;
   }
 
+  // Get current position after homing
+  int current_pos = 0;
+  joint.controller->getPosition(current_pos);
   RCLCPP_INFO(
     rclcpp::get_logger("EPOSHardwareInterface"),
-    "[%s] Homing attained at limit switch. Moving to center position (%d)...",
-    joint.name.c_str(), homing.center_offset);
+    "[%s] Homing attained at limit switch. Current position: %d, moving to center: %d",
+    joint.name.c_str(), current_pos, homing.center_offset);
 
   // Move to center position (center_offset from limit switch)
   if (!joint.controller->activatePositionMode()) {
@@ -582,6 +588,11 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
       "[%s] Failed to activate position mode", joint.name.c_str());
     return false;
   }
+
+  RCLCPP_INFO(
+    rclcpp::get_logger("EPOSHardwareInterface"),
+    "[%s] Setting position profile: velocity=%u, accel=%u",
+    joint.name.c_str(), homing.center_velocity, homing.homing_acceleration);
 
   if (!joint.controller->setPositionProfile(
         homing.center_velocity,
