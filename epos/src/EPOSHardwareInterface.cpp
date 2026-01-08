@@ -600,6 +600,9 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
     return false;
   }
 
+  // Wait for movement to start (EPOS4 needs time to clear "target reached" bit)
+  std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
   // Wait for target reached
   auto start_time = std::chrono::steady_clock::now();
   bool target_reached = false;
