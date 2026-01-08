@@ -526,12 +526,12 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
 {
   const auto & homing = joint.homing;
 
-  // Set homing parameters (home_offset=0: limit switch position becomes home)
+  // Set homing parameters (home_offset = center_offset so position 0 is at center)
   if (!joint.controller->setHomingParameter(
         homing.homing_acceleration,
         homing.speed_switch,
         homing.speed_index,
-        0,                     // home_offset: 0 so homing completes at limit switch
+        homing.center_offset,  // home_offset: offset from limit switch to center
         0,                     // current_threshold (not used for limit switch homing)
         0))                    // home_position
   {
@@ -540,10 +540,6 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
       "[%s] Failed to set homing parameters", joint.name.c_str());
     return false;
   }
-
-  // Switch to velocity mode first to clear any previous homing state
-  joint.controller->activateVelocityMode();
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
   // Activate homing mode
   if (!joint.controller->activateHomingMode()) {
@@ -565,86 +561,26 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
     return false;
   }
 
-  // Check if homing actually started (not just returning stale state)
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-  bool homing_attained = false;
-  bool homing_error = false;
-
-  if (!joint.controller->getHomingState(homing_attained, homing_error)) {
+  // Wait for homing to complete
+  if (!joint.controller->waitForHomingAttained(homing.timeout_ms)) {
     RCLCPP_ERROR(
       rclcpp::get_logger("EPOSHardwareInterface"),
-      "[%s] Failed to get initial homing state", joint.name.c_str());
+      "[%s] Timeout waiting for homing to complete", joint.name.c_str());
+    joint.controller->stopHoming();
     return false;
   }
 
-  // If already attained immediately after findHome, this is stale state - try again
-  if (homing_attained) {
-    RCLCPP_WARN(
-      rclcpp::get_logger("EPOSHardwareInterface"),
-      "[%s] Stale homing state detected, retrying findHome...", joint.name.c_str());
-
-    // Call findHome again to actually start the homing operation
-    if (!joint.controller->findHome(homing.homing_method)) {
-      RCLCPP_ERROR(
-        rclcpp::get_logger("EPOSHardwareInterface"),
-        "[%s] Failed to restart homing", joint.name.c_str());
-      return false;
-    }
-    homing_attained = false;
-  }
-
-  // Poll homing state until attained or timeout
-  auto start_time = std::chrono::steady_clock::now();
-
-  while (!homing_attained) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    if (!joint.controller->getHomingState(homing_attained, homing_error)) {
-      RCLCPP_ERROR(
-        rclcpp::get_logger("EPOSHardwareInterface"),
-        "[%s] Failed to get homing state", joint.name.c_str());
-      joint.controller->stopHoming();
-      return false;
-    }
-
-    if (homing_error) {
-      RCLCPP_ERROR(
-        rclcpp::get_logger("EPOSHardwareInterface"),
-        "[%s] Homing error detected", joint.name.c_str());
-      joint.controller->stopHoming();
-      return false;
-    }
-
-    auto elapsed = std::chrono::steady_clock::now() - start_time;
-    if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() > homing.timeout_ms) {
-      RCLCPP_ERROR(
-        rclcpp::get_logger("EPOSHardwareInterface"),
-        "[%s] Timeout waiting for homing to complete", joint.name.c_str());
-      joint.controller->stopHoming();
-      return false;
-    }
-  }
-
-  // Get current position after homing
-  int current_pos = 0;
-  joint.controller->getPosition(current_pos);
   RCLCPP_INFO(
     rclcpp::get_logger("EPOSHardwareInterface"),
-    "[%s] Homing attained at limit switch. Current position: %d, moving to center: %d",
-    joint.name.c_str(), current_pos, homing.center_offset);
+    "[%s] Homing attained. Moving to center (position 0)...", joint.name.c_str());
 
-  // Move to center position (center_offset from limit switch)
+  // Move to center position (position 0, since home_offset was set to center_offset)
   if (!joint.controller->activatePositionMode()) {
     RCLCPP_ERROR(
       rclcpp::get_logger("EPOSHardwareInterface"),
       "[%s] Failed to activate position mode", joint.name.c_str());
     return false;
   }
-
-  RCLCPP_INFO(
-    rclcpp::get_logger("EPOSHardwareInterface"),
-    "[%s] Setting position profile: velocity=%u, accel=%u",
-    joint.name.c_str(), homing.center_velocity, homing.homing_acceleration);
 
   if (!joint.controller->setPositionProfile(
         homing.center_velocity,
@@ -657,18 +593,15 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
     return false;
   }
 
-  if (!joint.controller->moveToPosition(homing.center_offset, true, true)) {
+  if (!joint.controller->moveToPosition(0, true, true)) {
     RCLCPP_ERROR(
       rclcpp::get_logger("EPOSHardwareInterface"),
       "[%s] Failed to move to center position", joint.name.c_str());
     return false;
   }
 
-  // Wait for movement to start (EPOS4 needs time to clear "target reached" bit)
-  std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
   // Wait for target reached
-  auto move_start_time = std::chrono::steady_clock::now();
+  auto start_time = std::chrono::steady_clock::now();
   bool target_reached = false;
 
   while (!target_reached) {
@@ -679,7 +612,7 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
       return false;
     }
 
-    auto elapsed = std::chrono::steady_clock::now() - move_start_time;
+    auto elapsed = std::chrono::steady_clock::now() - start_time;
     if (std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count() > homing.timeout_ms) {
       RCLCPP_ERROR(
         rclcpp::get_logger("EPOSHardwareInterface"),
@@ -692,7 +625,7 @@ bool EPOSHardwareInterface::homeToLimitAndCenter(JointState & joint)
 
   RCLCPP_INFO(
     rclcpp::get_logger("EPOSHardwareInterface"),
-    "[%s] Now at center position (%d)", joint.name.c_str(), homing.center_offset);
+    "[%s] Now at center position.", joint.name.c_str());
 
   return true;
 }
