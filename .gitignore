@@ -1,0 +1,9 @@
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+dist/
+build/
+*.egg-info/
+logs/*
+!logs/.gitkeep

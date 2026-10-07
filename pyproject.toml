@@ -1,0 +1,18 @@
+[project]
+name = "epos2"
+version = "0.1.0"
+description = "Bounded Windows USB bench control for maxon EPOS2"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "nop", email = "noplab90@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+epos2 = "epos2.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.5,<0.13.0"]
+build-backend = "uv_build"
