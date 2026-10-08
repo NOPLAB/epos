@@ -45,7 +45,7 @@ class Device:
             "GetCurrentIs": (node_prefix + [ct.POINTER(ct.c_int16)], BOOL),
             "GetFaultState": (node_prefix + [ct.POINTER(BOOL)], BOOL),
         }
-        for name in ("SetEnableState", "SetDisableState", "ActivateProfileVelocityMode", "HaltVelocityMovement"):
+        for name in ("SetEnableState", "SetDisableState", "ClearFault", "ActivateProfileVelocityMode", "HaltVelocityMovement"):
             signatures[name] = (node_prefix, BOOL)
         for name, (arguments, result) in signatures.items():
             function = getattr(self.library, "VCS_" + name)

@@ -35,6 +35,29 @@ Original evidence is preserved locally in `logs/run-600rpm-30s.log`,
 by default. `EPOS2 Project.pjm` is a PC-side Studio project, not proof that the
 drive's flash parameters contain the successful configuration.
 
+## Python high-speed diagnostic
+
+With the original 100 mA device cap, the 10,000 RPM diagnostic stopped at
+20.191 seconds: measured speed 1980 RPM and current 151 mA triggered the
+150 mA software guard. No device fault was reported.
+
+After explicit user authorization, a second attempt used 2000 mA device limits
+and a 2000 mA software current guard, without increasing the 12 V supply.
+Maximum measured speed was 8115 RPM; maximum absolute measured current was
+1321 mA. Samples from 94 seconds onward averaged 7999.46 RPM (7890–8115 RPM).
+The command reached 10,000 RPM, but actual speed did not enter the acquisition
+band, so the attempt stopped at its 104-second acquisition deadline.
+
+The measured current did not trip the 2000 mA guard. The available evidence
+does not distinguish supply/voltage limitations from controller or motor
+characteristics. No further automatic attempt was made. After stop, inspection
+confirmed zero RPM, statusword 0x1540, no fault/history entries, and both current
+limits restored to 100 mA. Gains/type/polarity were also restored; no flash save
+was performed. Raw evidence is in `logs/diagnostic-10000rpm.csv` and
+`logs/diagnostic-10000rpm-2000ma.csv`, with console output in the latter's `.txt`
+companion file. These experiments do not establish a rated current or safe
+production operating point.
+
 ## Refactoring validation
 
 The Python port is checked with a fake device and clock without moving the
